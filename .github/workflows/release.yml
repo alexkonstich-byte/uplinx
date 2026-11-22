@@ -59,6 +59,7 @@ jobs:
           Set-Content "$dir/portable.txt" "Settings are kept in %APPDATA%\Uplinx. Delete this file to stop self-updating as a portable copy."
           Compress-Archive -Path $dir -DestinationPath "dist/Uplinx-$v-portable-win64.zip" -Force
           Remove-Item -Recurse dist/portable
+          Remove-Item dist/*.wixpdb -ErrorAction SilentlyContinue
           Get-ChildItem dist -File | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } | Set-Content dist/SHA256SUMS.txt
           Get-ChildItem dist
 
