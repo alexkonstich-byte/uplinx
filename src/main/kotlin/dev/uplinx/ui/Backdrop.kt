@@ -56,9 +56,9 @@ fun ShapesBackdrop(screenIndex: Int, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     val dark = cs.surface.luminance() < 0.5f
     val fillAlpha = if (dark) 0.16f else 0.5f
-    val inf = rememberInfiniteTransition(label = "backdrop")
+
     // one shared clock: 60 s loop
-    val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(60_000, easing = LinearEasing)), label = "t")
+    val t = loopingFloat(60_000, "backdrop")
     val parallax by animateFloatAsState(screenIndex.toFloat(), MaterialTheme.motionScheme.slowSpatialSpec(), label = "parallax")
 
     Canvas(modifier) {
@@ -97,8 +97,7 @@ fun OrbitShapes(active: Boolean, radiusFraction: Float, modifier: Modifier = Mod
     val cs = MaterialTheme.colorScheme
     val colors = listOf(cs.primary, cs.tertiary, cs.secondary, cs.primary, cs.tertiary, cs.secondary)
     val visible by animateFloatAsState(if (active) 1f else 0f, MaterialTheme.motionScheme.slowSpatialSpec(), label = "orbitVis")
-    val inf = rememberInfiniteTransition(label = "orbit")
-    val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(16_000, easing = LinearEasing)), label = "orbitT")
+    val t = loopingFloat(16_000, "orbit")
     if (visible <= 0.01f) return
     Canvas(modifier) {
         val cx = size.width / 2; val cy = size.height / 2

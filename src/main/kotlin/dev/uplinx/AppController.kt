@@ -627,6 +627,9 @@ class AppController(private val scope: CoroutineScope) {
 
     fun updateWidgets(list: List<HomeWidget>) = update { it.copy(settings = it.settings.copy(homeWidgets = list)) }
 
+    /** Atomic edit of the layout from its *current* value — never from a list captured earlier by the UI. */
+    fun editWidgets(block: (List<HomeWidget>) -> List<HomeWidget>) = update { it.copy(settings = it.settings.copy(homeWidgets = block(it.settings.homeWidgets))) }
+
     // ================================================================ subscriptions
 
     fun addSubscription(name: String, url: String) {

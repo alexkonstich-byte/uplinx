@@ -48,7 +48,7 @@ fun SettingsScreen(app: AppController) {
                 Text(L("Тема"), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 SingleChoiceSegmentedButtonRow {
                     ThemeMode.entries.forEachIndexed { i, m ->
-                        SegmentedButton(s.themeMode == m, { set { it.copy(themeMode = m) } }, SegmentedButtonDefaults.itemShape(i, ThemeMode.entries.size)) { Text(m.title) }
+                        SegmentedButton(s.themeMode == m, { set { it.copy(themeMode = m) } }, SegmentedButtonDefaults.itemShape(i, ThemeMode.entries.size)) { Text(m.title, maxLines = 1, softWrap = false) }
                     }
                 }
             }
@@ -59,7 +59,7 @@ fun SettingsScreen(app: AppController) {
                 SingleChoiceSegmentedButtonRow {
                     val langs = listOf("system" to L("Системный"), "ru" to "Русский", "en" to "English")
                     langs.forEachIndexed { i, (code, label) ->
-                        SegmentedButton(s.language == code, { set { it.copy(language = code) } }, SegmentedButtonDefaults.itemShape(i, langs.size)) { Text(label) }
+                        SegmentedButton(s.language == code, { set { it.copy(language = code) } }, SegmentedButtonDefaults.itemShape(i, langs.size)) { Text(label, maxLines = 1, softWrap = false) }
                     }
                 }
             }
@@ -121,7 +121,7 @@ fun SettingsScreen(app: AppController) {
                 Text(L("Гео-базы"), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 SingleChoiceSegmentedButtonRow {
                     GeoSource.entries.forEachIndexed { i, g ->
-                        SegmentedButton(s.geoSource == g, { set { it.copy(geoSource = g) }; app.updateGeo() }, SegmentedButtonDefaults.itemShape(i, GeoSource.entries.size)) { Text(g.title) }
+                        SegmentedButton(s.geoSource == g, { set { it.copy(geoSource = g) }; app.updateGeo() }, SegmentedButtonDefaults.itemShape(i, GeoSource.entries.size)) { Text(g.title, maxLines = 1, softWrap = false) }
                     }
                 }
                 Spacer(Modifier.width(8.dp))
@@ -133,7 +133,7 @@ fun SettingsScreen(app: AppController) {
                 Text(L("Уровень логов"), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 SingleChoiceSegmentedButtonRow {
                     val lv = listOf("debug", "info", "warning", "error")
-                    lv.forEachIndexed { i, l -> SegmentedButton(s.logLevel == l, { set { it.copy(logLevel = l) } }, SegmentedButtonDefaults.itemShape(i, lv.size)) { Text(l) } }
+                    lv.forEachIndexed { i, l -> SegmentedButton(s.logLevel == l, { set { it.copy(logLevel = l) } }, SegmentedButtonDefaults.itemShape(i, lv.size)) { Text(l, maxLines = 1, softWrap = false) } }
                 }
             }
             Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -193,8 +193,7 @@ fun SettingsScreen(app: AppController) {
             val upd by app.update.collectAsState()
             val progress by app.updateProgress.collectAsState()
             Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                val inf = androidx.compose.animation.core.rememberInfiniteTransition(label = "about")
-                val rot by inf.animateFloat(0f, 360f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(20000, easing = androidx.compose.animation.core.LinearEasing)), label = "r")
+                val rot = loopingFloat(20000, "about") * 360f
                 Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
                     val mc = MaterialTheme.colorScheme.markColors()
                     androidx.compose.foundation.Canvas(Modifier.size(46.dp)) { drawUplinxMark(mc) }

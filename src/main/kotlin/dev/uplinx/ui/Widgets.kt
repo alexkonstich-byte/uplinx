@@ -322,7 +322,7 @@ fun SitesWidget(app: AppController) {
                     else -> cs.tertiary
                 }
                 Row(Modifier.fillMaxWidth().animateItem().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val pulse by animateFloatAsState(if (checking) 0.4f else 1f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "pulse")
+                    val pulse = if (checking) 0.4f + 0.6f * loopingFloat(600, "sitePulse") else 1f
                     Box(Modifier.size(10.dp).background(okColor.copy(alpha = if (checking) pulse else 1f), CircleShape))
                     Spacer(Modifier.width(10.dp))
                     Text(site, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)

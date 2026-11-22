@@ -293,8 +293,7 @@ private fun NodeRow(
 
 @Composable
 fun EmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, text: String, actions: @Composable RowScope.() -> Unit) {
-    val inf = androidx.compose.animation.core.rememberInfiniteTransition(label = "empty")
-    val rot by inf.animateFloat(0f, 360f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(30000, easing = androidx.compose.animation.core.LinearEasing)), label = "r")
+    val rot = loopingFloat(30000, "empty") * 360f
     Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Box(Modifier.size(140.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primaryContainer, PolygonShape(MaterialShapes.SoftBurst, rot)))

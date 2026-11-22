@@ -479,7 +479,7 @@ private val EN: Map<String, String> = mapOf(
     "TUN (весь трафик)" to "TUN (all traffic)",
     "Системная" to "System", "Светлая" to "Light", "Тёмная" to "Dark",
     "Акцент Windows" to "Windows accent", "Свой цвет" to "Custom colour",
-    "Стандартные (v2fly)" to "Standard (v2fly)", "runetfreedom (РФ)" to "runetfreedom (RU)",
+    "v2fly" to "v2fly", "runetfreedom (РФ)" to "runetfreedom (RU)",
     "Без маскировки" to "None",
     "Как в подписке" to "As in subscription", "По имени" to "By name", "По пингу" to "By ping", "Недавние" to "Recent",
 )

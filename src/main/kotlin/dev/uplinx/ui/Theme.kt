@@ -5,6 +5,9 @@ package dev.uplinx.ui
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MotionScheme
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.material3.*
+import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.Color
 import com.materialkolor.DynamicMaterialExpressiveTheme
 import com.materialkolor.PaletteStyle
@@ -13,6 +16,50 @@ import dev.uplinx.data.AppSettings
 import dev.uplinx.data.ColorSource
 import dev.uplinx.data.ThemeMode
 import kotlinx.coroutines.delay
+
+/**
+ * False while the window is in the background or minimised: decorative loops (backdrop, spinning button,
+ * orbits) then stand still, so an idle Uplinx costs ~0% CPU.
+ */
+val LocalMotionActive = staticCompositionLocalOf { true }
+
+/** A 0..1 linear loop that pauses (keeping its position) whenever [LocalMotionActive] is false. */
+@Composable
+fun loopingFloat(durationMillis: Int, label: String): Float {
+    if (!LocalMotionActive.current) return remember(label) { LastLoopValue }.values[label] ?: 0f
+    val inf = rememberInfiniteTransition(label = label)
+    val v by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(durationMillis, easing = LinearEasing)), label = label)
+    SideEffect { LastLoopValue.values[label] = v }
+    return v
+}
+
+/*
+ * M3 Expressive wavy indicators keep animating their wave even at a fixed value. These same-package
+ * overloads take priority over the material3 star import: wavy while the window is in front,
+ * a plain still indicator while it is in the background.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun LinearWavyProgressIndicator(progress: () -> Float, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.primary) {
+    if (LocalMotionActive.current) androidx.compose.material3.LinearWavyProgressIndicator(progress = progress, modifier = modifier, color = color)
+    else LinearProgressIndicator(progress = progress, modifier = modifier, color = color)
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun LinearWavyProgressIndicator(modifier: Modifier = Modifier) {
+    if (LocalMotionActive.current) androidx.compose.material3.LinearWavyProgressIndicator(modifier = modifier)
+    else LinearProgressIndicator(progress = { 0f }, modifier = modifier)
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun CircularWavyProgressIndicator(progress: () -> Float, modifier: Modifier = Modifier) {
+    if (LocalMotionActive.current) androidx.compose.material3.CircularWavyProgressIndicator(progress = progress, modifier = modifier)
+    else CircularProgressIndicator(progress = progress, modifier = modifier)
+}
+
+private object LastLoopValue { val values = java.util.concurrent.ConcurrentHashMap<String, Float>() }
 
 /** Seeds people can pick from when not following the Windows accent. */
 val SeedPresets = listOf(

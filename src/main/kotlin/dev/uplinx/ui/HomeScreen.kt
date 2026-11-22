@@ -166,10 +166,10 @@ fun HomeScreen(app: AppController, onOpenServers: () -> Unit) {
                         WidgetFrame(
                             w, cellW, edit, i,
                             onPreview = { ghost = it },
-                            onCommit = { moved -> ghost = null; app.updateWidgets(resolve(widgets, moved)) },
-                            onRemove = { app.updateWidgets(widgets.filterNot { it.id == w.id }) },
+                            onCommit = { moved -> ghost = null; app.editWidgets { cur -> if (cur.none { it.id == moved.id }) cur else resolve(cur, moved) } },
+                            onRemove = { app.editWidgets { cur -> cur.filterNot { it.id == w.id } } },
                             onOptions = if (w.type.hasOptions) ({ optionsFor = w }) else null,
-                        ) { WidgetContent(w, app, onOpenServers) { o -> app.updateWidgets(widgets.map { if (it.id == w.id) it.copy(opts = o) else it }) } }
+                        ) { WidgetContent(w, app, onOpenServers) { o -> app.editWidgets { cur -> cur.map { if (it.id == w.id) it.copy(opts = o) else it } } } }
                     }
                 }
                 if (widgets.isEmpty() && !edit) Box(Modifier.fillMaxWidth().height(CELL_H * 4), contentAlignment = Alignment.Center) {
@@ -180,12 +180,14 @@ fun HomeScreen(app: AppController, onOpenServers: () -> Unit) {
     }
 
     optionsFor?.let { w ->
-        WidgetOptionsDialog(w, onDismiss = { optionsFor = null }) { o -> optionsFor = null; app.updateWidgets(widgets.map { if (it.id == w.id) it.copy(opts = o) else it }) }
+        WidgetOptionsDialog(w, onDismiss = { optionsFor = null }) { o -> optionsFor = null; app.editWidgets { cur -> cur.map { if (it.id == w.id) it.copy(opts = o) else it } } }
     }
     if (picker) WidgetPicker(onDismiss = { picker = false }) { type ->
         picker = false
-        val (x, y) = firstFree(widgets, type.defW, type.defH)
-        app.updateWidgets(widgets + HomeWidget(type = type, x = x, y = y, w = type.defW, h = type.defH))
+        app.editWidgets { cur ->
+            val (fx, fy) = firstFree(cur, type.defW, type.defH)
+            cur + HomeWidget(type = type, x = fx, y = fy, w = type.defW, h = type.defH)
+        }
     }
 }
 
@@ -205,6 +207,8 @@ private fun WidgetFrame(
     var moving by remember { mutableStateOf(false) }
     var sizing by remember { mutableStateOf(false) }
     val current by rememberUpdatedState(w)
+    val commit by rememberUpdatedState(onCommit)
+    val preview by rememberUpdatedState(onPreview)
 
     fun movedTarget() = current.copy(
         x = ((current.x * cw + drag.x) / cw).roundToInt().coerceIn(0, COLS - current.w),
@@ -223,8 +227,11 @@ private fun WidgetFrame(
     val lift by animateFloatAsState(if (moving || sizing) 1.03f else 1f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "lift")
 
     // gentle wiggle in edit mode, each widget out of phase
-    val inf = rememberInfiniteTransition(label = "wiggle")
-    val wig by inf.animateFloat(-0.5f, 0.5f, infiniteRepeatable(tween(260 + index * 23, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "wig")
+    // only ticks while editing: an idle infinite transition would redraw the window every frame
+    val wig = if (edit) {
+        val inf = rememberInfiniteTransition(label = "wiggle")
+        inf.animateFloat(-0.5f, 0.5f, infiniteRepeatable(tween(260 + index * 23, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "wig").value
+    } else 0f
 
     val x = if (moving) w.x * cw + drag.x else ax
     val y = if (moving) w.y * ch + drag.y else ay
@@ -244,9 +251,9 @@ private fun WidgetFrame(
             .then(if (edit) Modifier.pointerInput(w.id) {
                 detectDragGestures(
                     onDragStart = { moving = true; drag = Offset.Zero },
-                    onDragEnd = { val t = movedTarget(); moving = false; drag = Offset.Zero; onCommit(t) },
-                    onDragCancel = { moving = false; drag = Offset.Zero; onPreview(null) },
-                    onDrag = { change, amount -> change.consume(); drag += amount; onPreview(movedTarget()) },
+                    onDragEnd = { val t = movedTarget(); moving = false; drag = Offset.Zero; commit(t) },
+                    onDragCancel = { moving = false; drag = Offset.Zero; preview(null) },
+                    onDrag = { change, amount -> change.consume(); drag += amount; preview(movedTarget()) },
                 )
             } else Modifier),
     ) {
@@ -264,9 +271,9 @@ private fun WidgetFrame(
                 modifier = Modifier.padding(6.dp).size(30.dp).pointerInput(w.id) {
                     detectDragGestures(
                         onDragStart = { sizing = true; resize = Offset.Zero },
-                        onDragEnd = { val t = sizedTarget(); sizing = false; resize = Offset.Zero; onCommit(t) },
-                        onDragCancel = { sizing = false; resize = Offset.Zero; onPreview(null) },
-                        onDrag = { change, amount -> change.consume(); resize += amount; onPreview(sizedTarget()) },
+                        onDragEnd = { val t = sizedTarget(); sizing = false; resize = Offset.Zero; commit(t) },
+                        onDragCancel = { sizing = false; resize = Offset.Zero; preview(null) },
+                        onDrag = { change, amount -> change.consume(); resize += amount; preview(sizedTarget()) },
                     )
                 }) {
                 Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.OpenInFull, L("Размер"), Modifier.size(15.dp).rotate(90f)) }

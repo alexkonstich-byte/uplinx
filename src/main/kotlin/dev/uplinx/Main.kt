@@ -129,6 +129,9 @@ fun main(args: Array<String>) {
                 // rounded corners, border and dark mode still come from DWM (Windows 11)
                 LaunchedEffect(caption, text, border, darkUi) { dev.uplinx.core.WinUtil.styleTitleBar(window, caption, text, border, darkUi) }
                 val maximizer = remember { dev.uplinx.ui.WindowMaximizer(window) }
+                // decorative motion only while the window is in front — for the whole window, title bar included
+                val active = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused && !windowState.isMinimized && visible
+                androidx.compose.runtime.CompositionLocalProvider(dev.uplinx.ui.LocalMotionActive provides active) {
                 androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
                     androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
                         UplinxTitleBar(app, maximizer,
@@ -137,6 +140,7 @@ fun main(args: Array<String>) {
                         androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f)) { AppRoot(app, onExit = exit) }
                     }
                     dev.uplinx.ui.ResizeGrips(window, enabled = !maximizer.maximized)
+                }
                 }
             }
             if (mini) dev.uplinx.ui.MiniWindow(app, onOpen = { visible = true; windowState.isMinimized = false }, onClose = { app.miniWindow.value = false })

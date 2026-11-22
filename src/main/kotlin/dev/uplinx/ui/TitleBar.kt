@@ -90,8 +90,8 @@ fun FrameWindowScope.UplinxTitleBar(app: AppController, maximizer: WindowMaximiz
                     is CoreStatus.Starting, is CoreStatus.Stopping, is CoreStatus.Preparing -> cs.tertiary
                     else -> cs.outline
                 }, label = "dot")
-                val inf = rememberInfiniteTransition(label = "pulse")
-                val pulse by inf.animateFloat(1f, if (on) 1.6f else 1f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "p")
+                // the pulse only exists while connected: an idle loop would redraw the window every frame
+                val pulse = if (on) { val phase = loopingFloat(2200, "titlePulse"); 1f + 0.6f * (1f - kotlin.math.abs(phase * 2f - 1f)) } else 1f
                 Surface(shape = CircleShape, color = cs.surfaceContainerHighest) {
                     Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp), contentAlignment = Alignment.Center) {

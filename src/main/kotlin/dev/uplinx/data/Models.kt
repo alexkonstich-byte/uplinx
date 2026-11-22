@@ -224,7 +224,7 @@ enum class ServerSort(private val ru: String) { MANUAL("Как в подписк
 }
 
 @Serializable
-enum class GeoSource(private val ru: String) { XRAY("Стандартные (v2fly)"), RUNETFREEDOM("runetfreedom (РФ)");
+enum class GeoSource(private val ru: String) { XRAY("v2fly"), RUNETFREEDOM("runetfreedom (РФ)");
     val title: String get() = dev.uplinx.L(ru)
 }
 

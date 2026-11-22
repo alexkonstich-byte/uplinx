@@ -79,8 +79,7 @@ private fun SubscriptionCard(
 ) {
     val cs = MaterialTheme.colorScheme
     var menu by remember { mutableStateOf(false) }
-    val inf = rememberInfiniteTransition(label = "sync")
-    val spin by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "spin")
+    val spin = if (isUpdating) loopingFloat(900, "sync") * 360f else 0f
     ElevatedCard(shape = RoundedCornerShape(28.dp), modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp).animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())) {
             Row(verticalAlignment = Alignment.CenterVertically) {

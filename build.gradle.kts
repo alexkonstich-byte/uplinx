@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.uplinx"
-version = (findProperty("appVersion") as String?) ?: "1.6.1"
+version = (findProperty("appVersion") as String?) ?: "1.6.2"
 
 dependencies {
     implementation(compose.desktop.currentOs)
@@ -36,12 +36,20 @@ tasks.test {
 compose.desktop {
     application {
         mainClass = "dev.uplinx.MainKt"
-        jvmArgs += listOf("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Duplinx.version=${project.version}")
+        jvmArgs += listOf(
+            "-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Duplinx.version=${project.version}",
+            // a small heap that is handed back to Windows when idle, instead of the JVM default (1/4 of RAM)
+            "-Xms48m", "-Xmx320m", "-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=15000",
+            "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=25", "-XX:+UseStringDeduplication",
+        )
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "Uplinx"
             packageVersion = project.version.toString()
-            description = "Material You proxy client powered by Xray"
+            // shown by Windows as the process name in Task Manager
+            description = "Uplinx Client"
+            vendor = "Uplinx"
+            copyright = "© 2026 Uplinx"
             modules("java.instrument", "java.net.http", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "jdk.charsets", "jdk.localedata")
             windows {
                 menuGroup = "Uplinx"

@@ -93,9 +93,8 @@ fun ConnectButton(state: ConnState, onClick: () -> Unit, modifier: Modifier = Mo
         when (state) { ConnState.OFF, ConnState.ERROR -> 0f; ConnState.BUSY -> 0.55f; ConnState.ON -> 1f },
         motion.slowSpatialSpec(), label = "morph",
     )
-    val inf = rememberInfiniteTransition(label = "conn")
-    val spin by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(when (state) { ConnState.BUSY -> 1400; ConnState.ON -> 14000; else -> 32000 }, easing = LinearEasing)), label = "spin")
-    val breathe by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Restart), label = "breathe")
+    val spin = loopingFloat(when (state) { ConnState.BUSY -> 1400; ConnState.ON -> 14000; else -> 32000 }, "connSpin$state") * 360f
+    val breathe = loopingFloat(2600, "connBreathe")
 
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()

@@ -213,8 +213,7 @@ private fun RailLogo(status: CoreStatus) {
     val on = status is CoreStatus.Running
     val morph = remember { androidx.graphics.shapes.Morph(MaterialShapes.Cookie4Sided, MaterialShapes.Cookie12Sided) }
     val p by animateFloatAsState(if (on) 1f else 0f, MaterialTheme.motionScheme.slowSpatialSpec(), label = "logo")
-    val inf = rememberInfiniteTransition(label = "logoSpin")
-    val rot by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(if (on) 9000 else 40000, easing = LinearEasing)), label = "lr")
+    val rot = loopingFloat(if (on) 9000 else 40000, "railLogo$on") * 360f
     val color by animateColorAsState(if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest, label = "lc")
     val mc = MaterialTheme.colorScheme.markColors()
     Box(Modifier.size(52.dp).background(color, MorphShape(morph, p, rot)), contentAlignment = Alignment.Center) {

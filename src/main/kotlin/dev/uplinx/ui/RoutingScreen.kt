@@ -74,7 +74,7 @@ fun RoutingScreen(app: AppController) {
                         SingleChoiceSegmentedButtonRow {
                             val opts = listOf("AsIs", "IPIfNonMatch", "IPOnDemand")
                             opts.forEachIndexed { i, o ->
-                                SegmentedButton(r.domainStrategy == o, { app.updateRouting { it.copy(domainStrategy = o) } }, SegmentedButtonDefaults.itemShape(i, opts.size)) { Text(o) }
+                                SegmentedButton(r.domainStrategy == o, { app.updateRouting { it.copy(domainStrategy = o) } }, SegmentedButtonDefaults.itemShape(i, opts.size)) { Text(o, maxLines = 1, softWrap = false) }
                             }
                         }
                     }
