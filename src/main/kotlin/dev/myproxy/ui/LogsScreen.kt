@@ -1,5 +1,7 @@
 package dev.myproxy.ui
 
+import dev.myproxy.L
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,19 +35,19 @@ fun LogsScreen(app: AppController) {
 
     Column(Modifier.fillMaxSize().padding(24.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Логи", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-            listOf('I' to "Все", 'W' to "Предупр.", 'E' to "Ошибки").forEach { (l, t) ->
+            Text(L("Логи"), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            listOf('I' to L("Все"), 'W' to L("Предупр."), 'E' to L("Ошибки")).forEach { (l, t) ->
                 FilterChip(level == l, { level = l }, label = { Text(t) }, modifier = Modifier.padding(end = 8.dp))
             }
-            OutlinedTextField(filter, { filter = it }, placeholder = { Text("Фильтр") }, singleLine = true, modifier = Modifier.width(200.dp),
+            OutlinedTextField(filter, { filter = it }, placeholder = { Text(L("Фильтр")) }, singleLine = true, modifier = Modifier.width(200.dp),
                 leadingIcon = { Icon(Icons.Rounded.FilterList, null) }, shape = RoundedCornerShape(50))
-            TooltipIcon(if (follow) "Автопрокрутка вкл." else "Автопрокрутка выкл.", if (follow) Icons.Rounded.VerticalAlignBottom else Icons.Rounded.PauseCircle) { follow = !follow }
-            TooltipIcon("Копировать всё", Icons.Rounded.ContentCopy) { app.copyToClipboard(shown.joinToString("\n") { "${fmt.format(Date(it.time))} ${it.text}" }, "Логи скопированы") }
-            TooltipIcon("Очистить", Icons.Rounded.ClearAll) { app.core.clearLogs() }
+            TooltipIcon(if (follow) L("Автопрокрутка вкл.") else L("Автопрокрутка выкл."), if (follow) Icons.Rounded.VerticalAlignBottom else Icons.Rounded.PauseCircle) { follow = !follow }
+            TooltipIcon(L("Копировать всё"), Icons.Rounded.ContentCopy) { app.copyToClipboard(shown.joinToString("\n") { "${fmt.format(Date(it.time))} ${it.text}" }, L("Логи скопированы")) }
+            TooltipIcon(L("Очистить"), Icons.Rounded.ClearAll) { app.core.clearLogs() }
         }
         Spacer(Modifier.height(12.dp))
         Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest, modifier = Modifier.fillMaxSize()) {
-            if (shown.isEmpty()) Box(contentAlignment = Alignment.Center) { Text("Пусто", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (shown.isEmpty()) Box(contentAlignment = Alignment.Center) { Text(L("Пусто"), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             else SelectionContainer {
                 LazyColumn(state = list, contentPadding = PaddingValues(16.dp)) {
                     items(shown) { l ->

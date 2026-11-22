@@ -2,6 +2,8 @@
 
 package dev.myproxy.ui
 
+import dev.myproxy.L
+
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
@@ -35,18 +37,18 @@ fun SubscriptionsScreen(app: AppController) {
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Подписки", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            Text(L("Подписки"), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
             if (state.subscriptions.isNotEmpty()) TextButton(onClick = app::updateAllSubscriptions) {
-                Icon(Icons.Rounded.Sync, null); Spacer(Modifier.width(6.dp)); Text("Обновить все")
+                Icon(Icons.Rounded.Sync, null); Spacer(Modifier.width(6.dp)); Text(L("Обновить все"))
             }
             Spacer(Modifier.width(8.dp))
-            Button(onClick = { adding = true }) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("Добавить") }
+            Button(onClick = { adding = true }) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text(L("Добавить")) }
         }
         if (state.subscriptions.isEmpty()) {
-            EmptyState(Icons.Rounded.CloudSync, "Нет подписок",
-                "Подписка — это ссылка от вашего VPN-сервиса. Сервера и остаток трафика будут обновляться автоматически.") {
-                Button(onClick = { adding = true }) { Text("Добавить подписку") }
-                OutlinedButton(onClick = app::importFromClipboard) { Text("Из буфера") }
+            EmptyState(Icons.Rounded.CloudSync, L("Нет подписок"),
+                L("Подписка — это ссылка от вашего VPN-сервиса. Сервера и остаток трафика будут обновляться автоматически.")) {
+                Button(onClick = { adding = true }) { Text(L("Добавить подписку")) }
+                OutlinedButton(onClick = app::importFromClipboard) { Text(L("Из буфера")) }
             }
             return@Column
         }
@@ -57,7 +59,7 @@ fun SubscriptionsScreen(app: AppController) {
                     modifier = Modifier.animateItem(placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec()),
                     onUpdate = { app.updateSubscription(s.id) }, onEdit = { edit = s }, onDelete = { app.deleteSubscription(s) },
                     onPin = { app.togglePin(s) },
-                    onCopy = { app.copyToClipboard(s.url, "Ссылка скопирована") })
+                    onCopy = { app.copyToClipboard(s.url, L("Ссылка скопирована")) })
             }
         }
     }
@@ -87,22 +89,22 @@ private fun SubscriptionCard(
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         FlagText(s.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f, fill = false))
-                        if (s.pinned) Icon(Icons.Rounded.PushPin, "Закреплена", Modifier.padding(start = 6.dp).size(16.dp), tint = cs.primary)
+                        if (s.pinned) Icon(Icons.Rounded.PushPin, L("Закреплена"), Modifier.padding(start = 6.dp).size(16.dp), tint = cs.primary)
                     }
-                    Text("$count серв. · обновлено ${formatAgo(s.updatedAt)}", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                    Text(L("%1 серв. · обновлено %2", count, formatAgo(s.updatedAt)), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                 }
                 FilledTonalIconButton(onClick = onUpdate, enabled = !isUpdating) {
-                    Icon(Icons.Rounded.Sync, "Обновить", Modifier.rotate(if (isUpdating) -spin else 0f))
+                    Icon(Icons.Rounded.Sync, L("Обновить"), Modifier.rotate(if (isUpdating) -spin else 0f))
                 }
                 Box {
                     IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, null) }
                     DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp)) {
-                        DropdownMenuItem({ Text(if (s.pinned) "Открепить" else "Закрепить") }, { menu = false; onPin() }, leadingIcon = { Icon(Icons.Rounded.PushPin, null) })
-                        DropdownMenuItem({ Text("Изменить") }, { menu = false; onEdit() }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
-                        DropdownMenuItem({ Text("Копировать ссылку") }, { menu = false; onCopy() }, leadingIcon = { Icon(Icons.Rounded.Link, null) })
-                        if (s.webPageUrl.isNotBlank()) DropdownMenuItem({ Text("Сайт сервиса") }, { menu = false; WinUtil.openUrl(s.webPageUrl) }, leadingIcon = { Icon(Icons.Rounded.OpenInNew, null) })
+                        DropdownMenuItem({ Text(if (s.pinned) L("Открепить") else L("Закрепить")) }, { menu = false; onPin() }, leadingIcon = { Icon(Icons.Rounded.PushPin, null) })
+                        DropdownMenuItem({ Text(L("Изменить")) }, { menu = false; onEdit() }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
+                        DropdownMenuItem({ Text(L("Копировать ссылку")) }, { menu = false; onCopy() }, leadingIcon = { Icon(Icons.Rounded.Link, null) })
+                        if (s.webPageUrl.isNotBlank()) DropdownMenuItem({ Text(L("Сайт сервиса")) }, { menu = false; WinUtil.openUrl(s.webPageUrl) }, leadingIcon = { Icon(Icons.Rounded.OpenInNew, null) })
                         HorizontalDivider()
-                        DropdownMenuItem({ Text("Удалить", color = cs.error) }, { menu = false; onDelete() }, leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = cs.error) })
+                        DropdownMenuItem({ Text(L("Удалить"), color = cs.error) }, { menu = false; onDelete() }, leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = cs.error) })
                     }
                 }
             }
@@ -111,7 +113,7 @@ private fun SubscriptionCard(
                 Surface(color = cs.errorContainer, contentColor = cs.onErrorContainer, shape = RoundedCornerShape(50), modifier = Modifier.padding(top = 10.dp)) {
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                        Text(if (s.expired) "Подписка истекла" else "Трафик исчерпан", style = MaterialTheme.typography.labelLarge)
+                        Text(if (s.expired) L("Подписка истекла") else L("Трафик исчерпан"), style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -122,15 +124,15 @@ private fun SubscriptionCard(
                 LinearWavyProgressIndicator(progress = { frac }, modifier = Modifier.fillMaxWidth(),
                     color = if (frac > 0.9f) cs.error else cs.primary)
                 Spacer(Modifier.height(6.dp))
-                Text("${formatBytes(used)} из ${formatBytes(s.total)}", style = MaterialTheme.typography.bodySmall)
+                Text(L("%1 из %2", formatBytes(used), formatBytes(s.total)), style = MaterialTheme.typography.bodySmall)
             } else if (s.upload + s.download > 0) {
                 Spacer(Modifier.height(10.dp))
-                Text("Использовано ${formatBytes(s.upload + s.download)} · безлимит", style = MaterialTheme.typography.bodySmall)
+                Text(L("Использовано %1 · безлимит", formatBytes(s.upload + s.download)), style = MaterialTheme.typography.bodySmall)
             }
             if (s.expire > 0) {
                 val days = (s.expire * 1000 - System.currentTimeMillis()) / 86_400_000
                 val date = DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.forLanguageTag("ru")).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(s.expire))
-                AssistChip(onClick = {}, label = { Text(if (days >= 0) "До $date · $days дн." else "Истекла $date") },
+                AssistChip(onClick = {}, label = { Text(if (days >= 0) L("До %1 · %2 дн.", date, days) else L("Истекла %1", date)) },
                     leadingIcon = { Icon(Icons.Rounded.Event, null, Modifier.size(18.dp)) }, modifier = Modifier.padding(top = 8.dp),
                     colors = if (days < 3) AssistChipDefaults.assistChipColors(labelColor = cs.error, leadingIconContentColor = cs.error) else AssistChipDefaults.assistChipColors())
             }
@@ -144,11 +146,11 @@ private fun SubscriptionCard(
                 }
             }
             if (s.lastError.isNotBlank()) {
-                Text("Ошибка: ${s.lastError}", style = MaterialTheme.typography.bodySmall, color = cs.error, modifier = Modifier.padding(top = 8.dp))
+                Text(L("Ошибка: %1", s.lastError), style = MaterialTheme.typography.bodySmall, color = cs.error, modifier = Modifier.padding(top = 8.dp))
             }
             if (s.supportUrl.isNotBlank()) {
                 TextButton(onClick = { WinUtil.openUrl(s.supportUrl) }, modifier = Modifier.padding(top = 4.dp)) {
-                    Icon(Icons.Rounded.SupportAgent, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Поддержка")
+                    Icon(Icons.Rounded.SupportAgent, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(L("Поддержка"))
                 }
             }
         }
@@ -163,16 +165,16 @@ private fun SubscriptionDialog(initial: Subscription?, onDismiss: () -> Unit, on
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.CloudSync, null) },
-        title = { Text(if (initial == null) "Новая подписка" else "Изменить подписку") },
+        title = { Text(if (initial == null) L("Новая подписка") else L("Изменить подписку")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.width(480.dp)) {
-                OutlinedTextField(url, { url = it }, label = { Text("URL подписки") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(name, { name = it }, label = { Text("Название (необязательно)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("Если пусто — возьмём из заголовка profile-title") })
-                OutlinedTextField(hours, { hours = it.filter(Char::isDigit) }, label = { Text("Автообновление, часов (0 — выкл.)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(url, { url = it }, label = { Text(L("URL подписки")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(name, { name = it }, label = { Text(L("Название (необязательно)")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text(L("Если пусто — возьмём из заголовка profile-title")) })
+                OutlinedTextField(hours, { hours = it.filter(Char::isDigit) }, label = { Text(L("Автообновление, часов (0 — выкл.)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
         },
-        confirmButton = { Button(onClick = { onSave(name, url.trim(), hours.toIntOrNull() ?: 12) }, enabled = url.startsWith("http")) { Text("Сохранить") } },
-        dismissButton = { TextButton(onDismiss) { Text("Отмена") } },
+        confirmButton = { Button(onClick = { onSave(name, url.trim(), hours.toIntOrNull() ?: 12) }, enabled = url.startsWith("http")) { Text(L("Сохранить")) } },
+        dismissButton = { TextButton(onDismiss) { Text(L("Отмена")) } },
     )
 }

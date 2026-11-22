@@ -2,6 +2,8 @@
 
 package dev.myproxy.ui
 
+import dev.myproxy.L
+
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -84,19 +86,23 @@ enum class ConnState { OFF, BUSY, ON, ERROR }
 fun ConnectButton(state: ConnState, onClick: () -> Unit, modifier: Modifier = Modifier, size: Float = 220f) {
     val cs = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
-    val morph = remember { Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided) }
+    val morph = remember { Morph(MaterialShapes.Cookie12Sided, MaterialShapes.Cookie9Sided) }
     val morphProgress by animateFloatAsState(
         when (state) { ConnState.OFF, ConnState.ERROR -> 0f; ConnState.BUSY -> 0.55f; ConnState.ON -> 1f },
         motion.slowSpatialSpec(), label = "morph",
     )
     val inf = rememberInfiniteTransition(label = "conn")
-    val spin by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(if (state == ConnState.BUSY) 1400 else 24000, easing = LinearEasing)), label = "spin")
+    val spin by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(when (state) { ConnState.BUSY -> 1400; ConnState.ON -> 14000; else -> 32000 }, easing = LinearEasing)), label = "spin")
     val breathe by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Restart), label = "breathe")
 
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val hovered by interaction.collectIsHoveredAsState()
     val scale by animateFloatAsState(if (pressed) 0.9f else if (hovered) 1.04f else 1f, motion.fastSpatialSpec(), label = "scale")
+    var turns by remember { mutableStateOf(0) }
+    LaunchedEffect(state) { turns++ }
+    // every state change gives the shape a springy extra turn
+    val pressTurn by animateFloatAsState(turns * 90f + if (hovered) 15f else 0f, motion.slowSpatialSpec(), label = "kick")
 
     val container by animateColorAsState(
         when (state) { ConnState.OFF -> cs.surfaceContainerHighest; ConnState.BUSY -> cs.secondaryContainer; ConnState.ON -> cs.primary; ConnState.ERROR -> cs.errorContainer },
@@ -120,11 +126,12 @@ fun ConnectButton(state: ConnState, onClick: () -> Unit, modifier: Modifier = Mo
                 }
             }
         }
+        OrbitShapes(state == ConnState.ON, 0.6f, Modifier.matchParentSize())
         Box(
             Modifier
                 .size(size.dp)
                 .scale(scale)
-                .clip(MorphShape(morph, morphProgress, if (state == ConnState.OFF || state == ConnState.ERROR) 0f else spin))
+                .clip(MorphShape(morph, morphProgress, spin + pressTurn))
                 .background(container)
                 .hoverable(interaction)
                 .clickable(interaction, indication = ripple(color = content), enabled = state != ConnState.BUSY, onClick = onClick),
@@ -188,8 +195,8 @@ fun PingChip(ping: Int?, testing: Boolean = false, modifier: Modifier = Modifier
             }
             val label = when {
                 ping == null || ping == PING_TESTING -> if (testing) null else "—"
-                ping < 0 -> "таймаут"
-                else -> "$ping мс"
+                ping < 0 -> L("таймаут")
+                else -> L("%1 мс", ping)
             }
             if (label != null) AnimatedContent(label, transitionSpec = { (fadeIn(tween(200)) + slideInVertically { it / 2 }) togetherWith (fadeOut(tween(120)) + slideOutVertically { -it / 2 }) }, label = "ping") { l ->
                 Text(l, style = MaterialTheme.typography.labelMedium.copy(
@@ -387,14 +394,14 @@ fun SpeedChart(history: List<Pair<Long, Long>>, modifier: Modifier = Modifier) {
 // ==================================================================== formatting
 
 fun formatBytes(b: Long): String {
-    if (b < 1024) return "$b Б"
-    val units = listOf("КБ", "МБ", "ГБ", "ТБ")
+    if (b < 1024) return L("%1 Б", b)
+    val units = listOf(L("КБ"), L("МБ"), L("ГБ"), L("ТБ"))
     var v = b / 1024.0; var i = 0
     while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
     return if (v >= 100) "%.0f %s".format(v, units[i]) else "%.1f %s".format(v, units[i])
 }
 
-fun formatSpeed(bps: Long) = formatBytes(bps) + "/с"
+fun formatSpeed(bps: Long) = formatBytes(bps) + L("/с")
 
 fun formatDuration(ms: Long): String {
     val s = ms / 1000
@@ -402,13 +409,13 @@ fun formatDuration(ms: Long): String {
 }
 
 fun formatAgo(millis: Long): String {
-    if (millis <= 0) return "никогда"
+    if (millis <= 0) return L("никогда")
     val d = (System.currentTimeMillis() - millis) / 1000
     return when {
-        d < 60 -> "только что"
-        d < 3600 -> "${d / 60} мин назад"
-        d < 86400 -> "${d / 3600} ч назад"
-        else -> "${d / 86400} дн назад"
+        d < 60 -> L("только что")
+        d < 3600 -> L("%1 мин назад", d / 60)
+        d < 86400 -> L("%1 ч назад", d / 3600)
+        else -> L("%1 дн назад", d / 86400)
     }
 }
 

@@ -4,11 +4,12 @@ import kotlinx.serialization.Serializable
 import java.util.UUID
 
 @Serializable
-enum class Protocol(val title: String) {
+enum class Protocol(private val ru: String) {
     VLESS("VLESS"), VMESS("VMess"), TROJAN("Trojan"), SHADOWSOCKS("Shadowsocks"),
     SOCKS("SOCKS"), HTTP("HTTP"), HYSTERIA2("Hysteria2"), WIREGUARD("WireGuard"),
     /** A full Xray client config (balancers, chains, custom routing) run as-is with our inbounds. */
-    XRAY_CONFIG("Xray JSON")
+    XRAY_CONFIG("Xray JSON");
+    val title: String get() = dev.myproxy.L(ru)
 }
 
 /** One server. Flat on purpose: every share-link format maps into these fields. */
@@ -124,16 +125,22 @@ data class Subscription(
     val hidden: Set<String> = emptySet(),
     /** Routing profile pushed by the panel (Happ-compatible `routing` header), applied on refresh if enabled. */
     val routingProfile: String = "",
+    /** User-Agent that got real servers from this panel (auto-detected), empty = use the global one. */
+    val userAgent: String = "",
 ) {
     val expired: Boolean get() = expire > 0 && expire * 1000 < System.currentTimeMillis()
     val usedUp: Boolean get() = total > 0 && upload + download >= total
 }
 
 @Serializable
-enum class RouteAction(val title: String) { PROXY("Прокси"), DIRECT("Напрямую"), BLOCK("Блок") }
+enum class RouteAction(private val ru: String) { PROXY("Прокси"), DIRECT("Напрямую"), BLOCK("Блок");
+    val title: String get() = dev.myproxy.L(ru)
+}
 
 @Serializable
-enum class RuleKind(val title: String) { DOMAIN("Домен"), IP("IP / CIDR"), GEOSITE("geosite"), GEOIP("geoip"), PROCESS("Процесс"), PORT("Порт") }
+enum class RuleKind(private val ru: String) { DOMAIN("Домен"), IP("IP / CIDR"), GEOSITE("geosite"), GEOIP("geoip"), PROCESS("Процесс"), PORT("Порт");
+    val title: String get() = dev.myproxy.L(ru)
+}
 
 @Serializable
 data class RouteRule(
@@ -145,10 +152,12 @@ data class RouteRule(
 )
 
 @Serializable
-enum class RoutingMode(val title: String, val subtitle: String) {
+enum class RoutingMode(private val ru: String, private val ruSubtitle: String) {
     RULE("По правилам", "Пресеты и свои правила"),
     GLOBAL("Глобальный", "Весь трафик через прокси"),
-    DIRECT("Напрямую", "Ядро работает, трафик идёт мимо"),
+    DIRECT("Напрямую", "Ядро работает, трафик идёт мимо");
+    val title: String get() = dev.myproxy.L(ru)
+    val subtitle: String get() = dev.myproxy.L(ruSubtitle)
 }
 
 @Serializable
@@ -163,26 +172,37 @@ data class RoutingSettings(
 )
 
 @Serializable
-enum class ConnectMode(val title: String) { SYSTEM_PROXY("Системный прокси"), TUN("TUN (весь трафик)") }
-
-@Serializable
-enum class ThemeMode(val title: String) { SYSTEM("Системная"), LIGHT("Светлая"), DARK("Тёмная") }
-
-@Serializable
-enum class ColorSource(val title: String) { WINDOWS_ACCENT("Акцент Windows"), CUSTOM("Свой цвет") }
-
-@Serializable
-enum class ClientSpoof(val title: String, val ua: String?) {
-    NONE("Без маскировки", null),
-    HAPP("Happ", "Happ/3.1.0"),
-    INCY("INCY", "INCY/2.4.0"),
+enum class ConnectMode(private val ru: String) { SYSTEM_PROXY("Системный прокси"), TUN("TUN (весь трафик)");
+    val title: String get() = dev.myproxy.L(ru)
 }
 
 @Serializable
-enum class ServerSort(val title: String) { MANUAL("Как в подписке"), NAME("По имени"), PING("По пингу"), LAST_USED("Недавние") }
+enum class ThemeMode(private val ru: String) { SYSTEM("Системная"), LIGHT("Светлая"), DARK("Тёмная");
+    val title: String get() = dev.myproxy.L(ru)
+}
 
 @Serializable
-enum class GeoSource(val title: String) { XRAY("Стандартные (v2fly)"), RUNETFREEDOM("runetfreedom (РФ)") }
+enum class ColorSource(private val ru: String) { WINDOWS_ACCENT("Акцент Windows"), CUSTOM("Свой цвет");
+    val title: String get() = dev.myproxy.L(ru)
+}
+
+@Serializable
+enum class ClientSpoof(private val ru: String, val ua: String?) {
+    NONE("Без маскировки", null),
+    HAPP("Happ", "Happ/3.1.0"),
+    INCY("INCY", "INCY/2.4.0");
+    val title: String get() = dev.myproxy.L(ru)
+}
+
+@Serializable
+enum class ServerSort(private val ru: String) { MANUAL("Как в подписке"), NAME("По имени"), PING("По пингу"), LAST_USED("Недавние");
+    val title: String get() = dev.myproxy.L(ru)
+}
+
+@Serializable
+enum class GeoSource(private val ru: String) { XRAY("Стандартные (v2fly)"), RUNETFREEDOM("runetfreedom (РФ)");
+    val title: String get() = dev.myproxy.L(ru)
+}
 
 @Serializable
 data class AppSettings(
@@ -209,6 +229,12 @@ data class AppSettings(
     val pingUrl: String = "https://www.gstatic.com/generate_204",
     val selectedNodeId: String? = null,
     val clientSpoof: ClientSpoof = ClientSpoof.NONE,
+    /** "system", "ru" or "en". */
+    val language: String = "system",
+    /** Version whose "What's new" was already shown. */
+    val lastSeenVersion: String = "",
+    /** Random per-install device id sent as x-hwid. */
+    val hwid: String = java.util.UUID.randomUUID().toString().replace("-", "").take(16),
     val serverSort: ServerSort = ServerSort.MANUAL,
     val maskAddresses: Boolean = false,
     val ipv6: Boolean = true,

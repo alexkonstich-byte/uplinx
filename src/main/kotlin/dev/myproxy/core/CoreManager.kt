@@ -1,5 +1,7 @@
 package dev.myproxy.core
 
+import dev.myproxy.L
+
 import dev.myproxy.data.GeoSource
 import dev.myproxy.data.Paths
 import kotlinx.coroutines.*
@@ -112,16 +114,16 @@ class CoreManager(private val scope: CoroutineScope) {
         val prev = _status.value
         try {
             if (force || !Paths.xrayExe.exists()) {
-                check(process == null) { "Остановите подключение перед обновлением ядра" }
+                check(process == null) { L("Остановите подключение перед обновлением ядра") }
                 val arch = if (System.getProperty("os.arch").contains("aarch64")) "arm64-v8a" else "64"
                 val zip = File(Paths.core, "xray.zip")
-                download("https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-$arch.zip", zip, "Ядро Xray")
+                download("https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-$arch.zip", zip, L("Ядро Xray"))
                 unzip(zip, Paths.core) { name ->
                     val base = name.substringAfterLast('/')
                     base.takeIf { it == "xray.exe" || (geo == GeoSource.XRAY && it.endsWith(".dat")) || (it.endsWith(".dat") && !File(Paths.core, it).exists()) }
                 }
                 zip.delete()
-                log("Xray установлен в ${Paths.core}")
+                log(L("Xray установлен в %1", Paths.core))
             }
             if (force || geo == GeoSource.RUNETFREEDOM && !File(Paths.core, ".geo-runetfreedom").exists()) updateGeo(geo)
             _version.value = readVersion()
@@ -138,17 +140,17 @@ class CoreManager(private val scope: CoroutineScope) {
         download("$base/geoip.dat", File(Paths.core, "geoip.dat"), "geoip.dat")
         download("$base/geosite.dat", File(Paths.core, "geosite.dat"), "geosite.dat")
         File(Paths.core, ".geo-runetfreedom").let { if (geo == GeoSource.RUNETFREEDOM) it.writeText("1") else it.delete() }
-        log("Гео-базы обновлены (${geo.title})")
+        log(L("Гео-базы обновлены (%1)", geo.title))
     }
 
     suspend fun ensureWintun() = withContext(Dispatchers.IO) {
         if (Paths.wintunDll.exists()) return@withContext
         val zip = File(Paths.core, "wintun.zip")
-        download("https://www.wintun.net/builds/wintun-0.14.1.zip", zip, "Драйвер Wintun")
+        download("https://www.wintun.net/builds/wintun-0.14.1.zip", zip, L("Драйвер Wintun"))
         val arch = if (System.getProperty("os.arch").contains("aarch64")) "arm64" else "amd64"
         unzip(zip, Paths.core) { name -> "wintun.dll".takeIf { name == "wintun/bin/$arch/wintun.dll" } }
         zip.delete()
-        check(Paths.wintunDll.exists()) { "Не удалось распаковать wintun.dll" }
+        check(Paths.wintunDll.exists()) { L("Не удалось распаковать wintun.dll") }
     }
 
     private fun readVersion(): String? = runCatching {
@@ -174,7 +176,7 @@ class CoreManager(private val scope: CoroutineScope) {
     }
 
     suspend fun start(configJson: String, apiPort: Int) = withContext(Dispatchers.IO) {
-        check(process == null) { "Ядро уже запущено" }
+        check(process == null) { L("Ядро уже запущено") }
         _status.value = CoreStatus.Starting
         Paths.runConfig.writeText(configJson)
         testConfig(Paths.runConfig)?.let { err ->
@@ -197,7 +199,7 @@ class CoreManager(private val scope: CoroutineScope) {
         delay(1200)
         if (!p.isAlive) {
             process = null; pidFile.delete()
-            val err = _logs.value.takeLast(3).joinToString("\n") { it.text }.ifBlank { "Xray завершился с кодом ${p.exitValue()}" }
+            val err = _logs.value.takeLast(3).joinToString("\n") { it.text }.ifBlank { L("Xray завершился с кодом %1", p.exitValue()) }
             _status.value = CoreStatus.Failed(err)
             error(err)
         }
@@ -207,7 +209,7 @@ class CoreManager(private val scope: CoroutineScope) {
         p.onExit().thenAccept {
             if (process === p) {
                 process = null; pidFile.delete(); statsJob?.cancel()
-                _status.value = CoreStatus.Failed("Xray неожиданно завершился (код ${it.exitValue()})")
+                _status.value = CoreStatus.Failed(L("Xray неожиданно завершился (код %1)", it.exitValue()))
             }
         }
     }
@@ -227,8 +229,8 @@ class CoreManager(private val scope: CoroutineScope) {
 
     /** Runs a full AmneziaWG tunnel through the official AmneziaWG service (admin required). */
     suspend fun startAmnezia(confText: String) = withContext(Dispatchers.IO) {
-        check(process == null && awgTunnel == null) { "Уже подключено" }
-        check(amneziaInstalled) { "AmneziaWG не установлен" }
+        check(process == null && awgTunnel == null) { L("Уже подключено") }
+        check(amneziaInstalled) { L("AmneziaWG не установлен") }
         _status.value = CoreStatus.Starting
         val name = "MyProxyAWG"
         val dir = File(Paths.home, "awg").apply { mkdirs() }
@@ -237,12 +239,12 @@ class CoreManager(private val scope: CoroutineScope) {
         awgCmd("/uninstalltunnelservice", name)
         val (code, out) = awgCmd("/installtunnelservice", conf.path)
         if (code != 0) {
-            val err = out.ifBlank { "amneziawg.exe завершился с кодом $code" }
+            val err = out.ifBlank { L("amneziawg.exe завершился с кодом %1", code) }
             _status.value = CoreStatus.Failed(err); log(err, 'E'); error(err)
         }
         awgTunnel = name
         File(Paths.home, "awg.active").writeText(name)
-        log("AmneziaWG: туннель $name запущен")
+        log(L("AmneziaWG: туннель %1 запущен", name))
         _status.value = CoreStatus.Running(System.currentTimeMillis())
         _traffic.value = Traffic()
         startAwgStats(name)
@@ -254,7 +256,7 @@ class CoreManager(private val scope: CoroutineScope) {
         if (amneziaInstalled) awgCmd("/uninstalltunnelservice", name)
         awgTunnel = null
         File(Paths.home, "awg.active").delete()
-        log("AmneziaWG: туннель $name остановлен")
+        log(L("AmneziaWG: туннель %1 остановлен", name))
     }
 
     private fun startAwgStats(name: String) {

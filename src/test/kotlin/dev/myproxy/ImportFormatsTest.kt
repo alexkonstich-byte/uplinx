@@ -113,6 +113,8 @@ class ImportFormatsTest {
     }
 
     @Test fun friendlyErrors() {
+        I18n.lang = Lang.RU
+        assertEquals("Port already in use", run { I18n.lang = Lang.EN; Errors.explain("bind: address already in use").title }.also { I18n.lang = Lang.RU })
         assertEquals("Порт уже занят", Errors.explain("listen tcp 127.0.0.1:10808: bind: Only one usage of each socket address").title)
         assertEquals("Сервер не отвечает", Errors.explain("dial tcp: i/o timeout").title)
     }

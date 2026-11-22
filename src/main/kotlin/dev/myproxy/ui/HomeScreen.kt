@@ -2,6 +2,8 @@
 
 package dev.myproxy.ui
 
+import dev.myproxy.L
+
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
@@ -59,7 +61,7 @@ fun HomeScreen(app: AppController, onOpenServers: () -> Unit) {
                 onClick = onOpenServers, onPing = app::pingCurrentReal)
             TrafficCard(traffic, conn == ConnState.ON)
             val sub = state.subscriptions.firstOrNull { it.id == node?.subscriptionId }
-            if (sub != null && (sub.expired || sub.usedUp)) AssistChip({}, label = { Text(if (sub.expired) "Подписка «${sub.name}» истекла" else "Трафик подписки «${sub.name}» исчерпан") },
+            if (sub != null && (sub.expired || sub.usedUp)) AssistChip({}, label = { Text(if (sub.expired) L("Подписка «%1» истекла", sub.name) else L("Трафик подписки «%1» исчерпан", sub.name)) },
                 leadingIcon = { Icon(Icons.Rounded.ErrorOutline, null) }, border = null,
                 colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.errorContainer, labelColor = MaterialTheme.colorScheme.onErrorContainer, leadingIconContentColor = MaterialTheme.colorScheme.onErrorContainer))
             AnimatedVisibility(sub != null && (sub.total > 0 || sub.expire > 0), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
@@ -92,12 +94,12 @@ private fun StatusLine(status: CoreStatus) {
     ) { _ ->
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             val (title, subtitle) = when (status) {
-                is CoreStatus.Running -> "Подключено" to null
-                is CoreStatus.Starting -> "Подключение…" to null
-                is CoreStatus.Stopping -> "Отключение…" to null
-                is CoreStatus.Preparing -> "Загрузка" to status.what
-                is CoreStatus.Failed -> "Ошибка" to status.message.lineSequence().firstOrNull()
-                CoreStatus.Stopped -> "Не подключено" to "Нажмите, чтобы подключиться"
+                is CoreStatus.Running -> L("Подключено") to null
+                is CoreStatus.Starting -> L("Подключение…") to null
+                is CoreStatus.Stopping -> L("Отключение…") to null
+                is CoreStatus.Preparing -> L("Загрузка") to status.what
+                is CoreStatus.Failed -> L("Ошибка") to status.message.lineSequence().firstOrNull()
+                CoreStatus.Stopped -> L("Не подключено") to L("Нажмите, чтобы подключиться")
             }
             Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
             if (status is CoreStatus.Running) {
@@ -128,7 +130,7 @@ private fun ModeSwitchers(connectMode: ConnectMode, routingMode: RoutingMode, ap
                 ) {
                     Icon(if (m == ConnectMode.TUN) Icons.Rounded.Lan else Icons.Rounded.Public, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (m == ConnectMode.TUN) "TUN" else "Системный прокси")
+                    Text(if (m == ConnectMode.TUN) "TUN" else L("Системный прокси"))
                 }
             }
         }
@@ -166,16 +168,16 @@ private fun CurrentServerCard(name: String?, subtitle: String?, ping: Int?, test
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text("Сервер", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(L("Сервер"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 AnimatedContent(title, transitionSpec = { (fadeIn() + slideInHorizontally { it / 3 }) togetherWith (fadeOut() + slideOutHorizontally { -it / 3 }) }, label = "srv") { n ->
-                    FlagText(n ?: "Не выбран", style = MaterialTheme.typography.titleLarge)
+                    FlagText(n ?: L("Не выбран"), style = MaterialTheme.typography.titleLarge)
                 }
-                if (subtitle != null) Text(subtitle + if (amnezia) " · движок AmneziaWG" else "", style = MaterialTheme.typography.bodySmall,
+                if (subtitle != null) Text(subtitle + if (amnezia) L(" · движок AmneziaWG") else "", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (name != null) {
                 PingChip(ping, testing)
-                IconButton(onClick = onPing) { Icon(Icons.Rounded.Speed, "Проверить задержку") }
+                IconButton(onClick = onPing) { Icon(Icons.Rounded.Speed, L("Проверить задержку")) }
             }
             Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -187,14 +189,14 @@ private fun TrafficCard(t: dev.myproxy.core.Traffic, active: Boolean) {
     Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SpeedValue(Icons.Rounded.ArrowDownward, "Загрузка", formatSpeed(t.down), MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-                SpeedValue(Icons.Rounded.ArrowUpward, "Отдача", formatSpeed(t.up), MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
+                SpeedValue(Icons.Rounded.ArrowDownward, L("Загрузка"), formatSpeed(t.down), MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                SpeedValue(Icons.Rounded.ArrowUpward, L("Отдача"), formatSpeed(t.up), MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
             }
             Spacer(Modifier.height(12.dp))
             val alpha by animateFloatAsState(if (active) 1f else 0.35f, label = "chartA")
             SpeedChart(t.history, Modifier.fillMaxWidth().height(96.dp).graphicsAlpha(alpha))
             Spacer(Modifier.height(10.dp))
-            Text("За сессию: ↓ ${formatBytes(t.totalDown)} · ↑ ${formatBytes(t.totalUp)}", style = MaterialTheme.typography.bodySmall,
+            Text(L("За сессию: ↓ %1 · ↑ %2", formatBytes(t.totalDown), formatBytes(t.totalUp)), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -226,12 +228,12 @@ private fun SubscriptionQuotaCard(name: String, used: Long, total: Long, expire:
                 val frac by animateFloatAsState((used.toFloat() / total).coerceIn(0f, 1f), MaterialTheme.motionScheme.slowSpatialSpec(), label = "quota")
                 LinearWavyProgressIndicator(progress = { frac }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
-                Text("${formatBytes(used)} из ${formatBytes(total)}", style = MaterialTheme.typography.bodySmall)
+                Text(L("%1 из %2", formatBytes(used), formatBytes(total)), style = MaterialTheme.typography.bodySmall)
             }
             if (expire > 0) {
                 val days = (expire * 1000 - System.currentTimeMillis()) / 86_400_000
                 val date = DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.forLanguageTag("ru")).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(expire))
-                Text(if (days >= 0) "Действует до $date · осталось $days дн." else "Истекла $date", style = MaterialTheme.typography.bodySmall,
+                Text(if (days >= 0) L("Действует до %1 · осталось %2 дн.", date, days) else L("Истекла %1", date), style = MaterialTheme.typography.bodySmall,
                     color = if (days < 3) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer)
             }
         }

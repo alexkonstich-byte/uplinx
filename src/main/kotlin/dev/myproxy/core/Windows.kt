@@ -83,8 +83,31 @@ object SystemProxy {
     }
 }
 
+private interface DwmApi : StdCallLibrary {
+    fun DwmSetWindowAttribute(hwnd: com.sun.jna.platform.win32.WinDef.HWND, attr: Int, value: com.sun.jna.ptr.IntByReference, size: Int): Int
+}
+
 object WinUtil {
     private val shell by lazy { Native.load("shell32", Shell32Ex::class.java, W32APIOptions.DEFAULT_OPTIONS) }
+    private val dwm by lazy { runCatching { Native.load("dwmapi", DwmApi::class.java, W32APIOptions.DEFAULT_OPTIONS) }.getOrNull() }
+
+    /**
+     * Paints the native Windows 11 title bar in the Material You scheme (caption, text, border colours,
+     * dark mode, rounded corners). Older Windows ignore the attributes they do not know.
+     */
+    fun styleTitleBar(window: java.awt.Window, captionArgb: Int, textArgb: Int, borderArgb: Int, dark: Boolean) {
+        val api = dwm ?: return
+        runCatching {
+            val hwnd = com.sun.jna.platform.win32.WinDef.HWND(Native.getWindowPointer(window))
+            fun colorRef(argb: Int) = (argb and 0xFF shl 16) or (argb and 0xFF00) or (argb shr 16 and 0xFF)
+            fun set(attr: Int, v: Int) = api.DwmSetWindowAttribute(hwnd, attr, com.sun.jna.ptr.IntByReference(v), 4)
+            set(20, if (dark) 1 else 0)          // DWMWA_USE_IMMERSIVE_DARK_MODE
+            set(33, 2)                           // DWMWA_WINDOW_CORNER_PREFERENCE = round
+            set(34, colorRef(borderArgb))        // DWMWA_BORDER_COLOR
+            set(35, colorRef(captionArgb))       // DWMWA_CAPTION_COLOR
+            set(36, colorRef(textArgb))          // DWMWA_TEXT_COLOR
+        }
+    }
 
     val isAdmin: Boolean get() = runCatching { shell.IsUserAnAdmin() }.getOrDefault(false)
 

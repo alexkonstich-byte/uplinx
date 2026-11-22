@@ -3,6 +3,8 @@ package dev.myproxy
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.*
@@ -90,14 +92,14 @@ fun main(args: Array<String>) {
             }
             Tray(
                 icon = trayIcon,
-                tooltip = "MyProxy — " + if (status is CoreStatus.Running) "подключено" else "отключено",
+                tooltip = "MyProxy — " + if (status is CoreStatus.Running) L("подключено") else L("отключено"),
                 onAction = { visible = true; windowState.isMinimized = false },
                 menu = {
-                    Item(if (status is CoreStatus.Running) "Отключиться" else "Подключиться", onClick = app::toggle)
-                    Item("Открыть", onClick = { visible = true; windowState.isMinimized = false })
-                    Item(if (mini) "Скрыть мини-окно" else "Мини-окно", onClick = { app.miniWindow.value = !mini })
+                    Item(if (status is CoreStatus.Running) L("Отключиться") else L("Подключиться"), onClick = app::toggle)
+                    Item(L("Открыть"), onClick = { visible = true; windowState.isMinimized = false })
+                    Item(if (mini) L("Скрыть мини-окно") else L("Мини-окно"), onClick = { app.miniWindow.value = !mini })
                     Separator()
-                    Item("Выход", onClick = exit)
+                    Item(L("Выход"), onClick = exit)
                 },
             )
             Window(
@@ -112,6 +114,10 @@ fun main(args: Array<String>) {
                 },
             ) {
                 window.minimumSize = java.awt.Dimension(900, 620)
+                val caption = cs.surfaceContainer.toArgb(); val text = cs.onSurface.toArgb(); val border = cs.outlineVariant.toArgb()
+                val darkUi = cs.surface.luminance() < 0.5f
+                // the title bar follows the theme, including the animated palette changes
+                LaunchedEffect(caption, text, border, darkUi) { dev.myproxy.core.WinUtil.styleTitleBar(window, caption, text, border, darkUi) }
                 AppRoot(app, onExit = exit)
             }
             if (mini) dev.myproxy.ui.MiniWindow(app, onOpen = { visible = true; windowState.isMinimized = false }, onClose = { app.miniWindow.value = false })

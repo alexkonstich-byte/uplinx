@@ -2,6 +2,8 @@
 
 package dev.myproxy.ui
 
+import dev.myproxy.L
+
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -29,12 +31,12 @@ import java.io.File
 import java.net.URI
 
 enum class Screen(val title: String, val icon: ImageVector, val iconSelected: ImageVector) {
-    HOME("Главная", Icons.Outlined.Home, Icons.Rounded.Home),
-    SERVERS("Серверы", Icons.Outlined.Dns, Icons.Rounded.Dns),
-    SUBS("Подписки", Icons.Outlined.CloudSync, Icons.Rounded.CloudSync),
-    ROUTING("Маршруты", Icons.Outlined.AltRoute, Icons.Rounded.AltRoute),
-    LOGS("Логи", Icons.Outlined.Terminal, Icons.Rounded.Terminal),
-    SETTINGS("Настройки", Icons.Outlined.Settings, Icons.Rounded.Settings),
+    HOME(L("Главная"), Icons.Outlined.Home, Icons.Rounded.Home),
+    SERVERS(L("Серверы"), Icons.Outlined.Dns, Icons.Rounded.Dns),
+    SUBS(L("Подписки"), Icons.Outlined.CloudSync, Icons.Rounded.CloudSync),
+    ROUTING(L("Маршруты"), Icons.Outlined.AltRoute, Icons.Rounded.AltRoute),
+    LOGS(L("Логи"), Icons.Outlined.Terminal, Icons.Rounded.Terminal),
+    SETTINGS(L("Настройки"), Icons.Outlined.Settings, Icons.Rounded.Settings),
 }
 
 @Composable
@@ -73,8 +75,9 @@ fun AppRoot(app: AppController, onExit: () -> Unit, initial: Screen = Screen.HOM
 
     Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize()
         .dragAndDropTarget(shouldStartDragAndDrop = { true }, target = dropTarget)) {
+        ShapesBackdrop(screen.ordinal, Modifier.fillMaxSize())
         Row(Modifier.fillMaxSize()) {
-            NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer, header = {
+            NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f), header = {
                 Spacer(Modifier.height(8.dp))
                 RailLogo(status)
                 Spacer(Modifier.height(16.dp))
@@ -95,7 +98,7 @@ fun AppRoot(app: AppController, onExit: () -> Unit, initial: Screen = Screen.HOM
                 Spacer(Modifier.height(12.dp))
             }
             Scaffold(snackbarHost = { SnackbarHost(snackbar) { Snackbar(it, shape = RoundedCornerShape(16.dp)) } },
-                containerColor = MaterialTheme.colorScheme.surface, modifier = Modifier.weight(1f)) { pad ->
+                containerColor = androidx.compose.ui.graphics.Color.Transparent, modifier = Modifier.weight(1f)) { pad ->
                 AnimatedContent(
                     targetState = screen,
                     transitionSpec = {
@@ -127,8 +130,8 @@ fun AppRoot(app: AppController, onExit: () -> Unit, initial: Screen = Screen.HOM
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Rounded.FileDownload, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.height(12.dp))
-                    Text("Отпустите, чтобы импортировать", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Text(".conf (WireGuard / AmneziaWG), .json (Xray / sing-box), .yaml (Clash), .txt со ссылками, картинки с QR", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(L("Отпустите, чтобы импортировать"), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(L(".conf (WireGuard / AmneziaWG), .json (Xray / sing-box), .yaml (Clash), .txt со ссылками, картинки с QR"), color = MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
         }
@@ -138,28 +141,28 @@ fun AppRoot(app: AppController, onExit: () -> Unit, initial: Screen = Screen.HOM
     if (needAdmin) AlertDialog(
         onDismissRequest = { app.needAdmin.value = false },
         icon = { Icon(Icons.Rounded.AdminPanelSettings, null) },
-        title = { Text("Нужны права администратора") },
-        text = { Text("Для TUN и AmneziaWG Windows требует запуск от администратора. Перезапустить MyProxy с правами администратора и сразу подключиться?") },
-        confirmButton = { Button({ app.relaunchAsAdmin(onExit) }) { Text("Перезапустить") } },
-        dismissButton = { TextButton({ app.needAdmin.value = false }) { Text("Отмена") } },
+        title = { Text(L("Нужны права администратора")) },
+        text = { Text(L("Для TUN и AmneziaWG Windows требует запуск от администратора. Перезапустить MyProxy с правами администратора и сразу подключиться?")) },
+        confirmButton = { Button({ app.relaunchAsAdmin(onExit) }) { Text(L("Перезапустить")) } },
+        dismissButton = { TextButton({ app.needAdmin.value = false }) { Text(L("Отмена")) } },
     )
     val pending by app.pendingImport.collectAsState()
     pending?.let { p ->
         AlertDialog(
             onDismissRequest = { app.pendingImport.value = null },
             icon = { Icon(Icons.Rounded.AddLink, null) },
-            title = { Text("Добавить?") },
+            title = { Text(L("Добавить?")) },
             text = {
                 Column {
-                    Text("Ссылка открыта из другого приложения. Проверьте, что вы ей доверяете.")
+                    Text(L("Ссылка открыта из другого приложения. Проверьте, что вы ей доверяете."))
                     Spacer(Modifier.height(10.dp))
                     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
                         Text(p.summary, Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium, maxLines = 4)
                     }
                 }
             },
-            confirmButton = { Button({ app.pendingImport.value = null; app.importText(p.text) }) { Text("Добавить") } },
-            dismissButton = { TextButton({ app.pendingImport.value = null }) { Text("Отмена") } },
+            confirmButton = { Button({ app.pendingImport.value = null; app.importText(p.text) }) { Text(L("Добавить")) } },
+            dismissButton = { TextButton({ app.pendingImport.value = null }) { Text(L("Отмена")) } },
         )
     }
     val showErr by app.showErrorDetails.collectAsState()
@@ -172,7 +175,7 @@ fun AppRoot(app: AppController, onExit: () -> Unit, initial: Screen = Screen.HOM
             Column(Modifier.width(560.dp)) {
                 Text(err!!.hint)
                 Spacer(Modifier.height(12.dp))
-                Text("Технические детали", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(L("Технические детали"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
                     androidx.compose.foundation.text.selection.SelectionContainer {
                         Text(err!!.details, Modifier.padding(12.dp).heightIn(max = 220.dp), style = MaterialTheme.typography.bodySmall.copy(fontFamily = Mono))
@@ -180,21 +183,26 @@ fun AppRoot(app: AppController, onExit: () -> Unit, initial: Screen = Screen.HOM
                 }
             }
         },
-        confirmButton = { TextButton({ app.showErrorDetails.value = false }) { Text("Закрыть") } },
+        confirmButton = { TextButton({ app.showErrorDetails.value = false }) { Text(L("Закрыть")) } },
         dismissButton = {
             Row {
-                TextButton({ app.copyToClipboard(err!!.details) }) { Text("Копировать") }
-                TextButton({ app.showErrorDetails.value = false; screen = Screen.LOGS }) { Text("Логи") }
+                TextButton({ app.copyToClipboard(err!!.details) }) { Text(L("Копировать")) }
+                TextButton({ app.showErrorDetails.value = false; screen = Screen.LOGS }) { Text(L("Логи")) }
             }
         },
     )
+    val updInfo by app.update.collectAsState()
+    val showUpd by app.showUpdateDetails.collectAsState()
+    if (showUpd) updInfo?.let { UpdateDialog(app, it, onExit) { app.showUpdateDetails.value = false } }
+    val news by app.whatsNew.collectAsState()
+    news?.let { WhatsNewDialog(it) { app.whatsNew.value = null } }
     if (needAmnezia) AlertDialog(
         onDismissRequest = { app.needAmnezia.value = false },
         icon = { Icon(Icons.Rounded.Extension, null) },
-        title = { Text("Нужен клиент AmneziaWG") },
-        text = { Text("Этот конфиг использует обфускацию AmneziaWG (S1/S2/H1–H4), которую умеет только официальный движок. Установите AmneziaWG для Windows — MyProxy будет управлять туннелем сам.") },
-        confirmButton = { Button({ app.needAmnezia.value = false; dev.myproxy.core.WinUtil.openUrl("https://github.com/amnezia-vpn/amneziawg-windows-client/releases") }) { Text("Скачать") } },
-        dismissButton = { TextButton({ app.needAmnezia.value = false }) { Text("Закрыть") } },
+        title = { Text(L("Нужен клиент AmneziaWG")) },
+        text = { Text(L("Этот конфиг использует обфускацию AmneziaWG (S1/S2/H1–H4), которую умеет только официальный движок. Установите AmneziaWG для Windows — MyProxy будет управлять туннелем сам.")) },
+        confirmButton = { Button({ app.needAmnezia.value = false; dev.myproxy.core.WinUtil.openUrl("https://github.com/amnezia-vpn/amneziawg-windows-client/releases") }) { Text(L("Скачать")) } },
+        dismissButton = { TextButton({ app.needAmnezia.value = false }) { Text(L("Закрыть")) } },
     )
 }
 
@@ -223,13 +231,13 @@ private fun UpdateBanner(app: AppController, onExit: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(10.dp))
-                        Text("Доступна версия ${u.version}", style = MaterialTheme.typography.titleMedium)
+                        Text(L("Доступна версия %1", u.version), style = MaterialTheme.typography.titleMedium)
                     }
                     if (u.notes.isNotBlank()) Text(u.notes.lineSequence().filter { it.isNotBlank() }.take(4).joinToString("\n"), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4, modifier = Modifier.padding(top = 8.dp))
                     Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.End) {
-                        TextButton({ updDismissed = true }) { Text("Позже") }
-                        Button({ updDismissed = true; app.installUpdate(onExit) }) { Text("Обновить") }
+                        TextButton({ updDismissed = true }) { Text(L("Позже")) }
+                        Button({ updDismissed = true; app.showUpdateDetails.value = true }) { Text(L("Подробнее")) }
                     }
                 }
             }

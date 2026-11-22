@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           v="${GITHUB_REF_NAME#v}"
-          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || v="1.1.1"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || v="1.2.0"
           echo "APP_VERSION=$v" >> "$GITHUB_ENV"
 
       - name: Test
@@ -38,6 +38,7 @@ jobs:
           New-Item -ItemType Directory dist | Out-Null
           Get-ChildItem build/compose/binaries/main/exe/*.exe | Copy-Item -Destination "dist/MyProxy-$env:APP_VERSION-setup.exe"
           Get-ChildItem build/compose/binaries/main/msi/*.msi | Copy-Item -Destination "dist/MyProxy-$env:APP_VERSION.msi"
+          New-Item -ItemType File build/compose/binaries/main/app/MyProxy/portable.txt | Out-Null
           Compress-Archive build/compose/binaries/main/app/MyProxy "dist/MyProxy-$env:APP_VERSION-portable-win64.zip"
           Get-ChildItem dist | ForEach-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $_.Name } | Set-Content dist/SHA256SUMS.txt
 

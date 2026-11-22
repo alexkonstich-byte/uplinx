@@ -26,7 +26,7 @@ object Screenshots {
         val sub = Subscription(name = "Nebula VPN", url = "https://example.com/sub/abc", upload = 3_400_000_000, download = 41_200_000_000,
             total = 100_000_000_000, expire = now / 1000 + 86400 * 23, updatedAt = now - 12 * 60_000, announce = "Добавлены серверы в Финляндии 🇫🇮")
         val nodes = listOf(
-            ProxyNode(name = "🇳🇱 Нидерланды · Амстердам", protocol = Protocol.VLESS, address = "nl1.nebula.example", port = 443, security = "reality", subscriptionId = sub.id),
+            ProxyNode(name = "🇳🇱 Нидерланды · Амстердам", lastUsedAt = 1, protocol = Protocol.VLESS, address = "nl1.nebula.example", port = 443, security = "reality", subscriptionId = sub.id),
             ProxyNode(name = "🇩🇪 Германия · Франкфурт", protocol = Protocol.VLESS, address = "de1.nebula.example", port = 443, network = "xhttp", security = "tls", subscriptionId = sub.id),
             ProxyNode(name = "🇫🇮 Финляндия · Хельсинки", protocol = Protocol.TROJAN, address = "fi1.nebula.example", port = 443, network = "grpc", security = "tls", subscriptionId = sub.id),
             ProxyNode(name = "🇺🇸 США · Нью-Йорк", protocol = Protocol.HYSTERIA2, address = "us1.nebula.example", port = 8443, security = "tls", subscriptionId = sub.id),
@@ -36,7 +36,7 @@ object Screenshots {
         )
         val state = AppState(
             settings = AppSettings(selectedNodeId = nodes[0].id, colorSource = ColorSource.CUSTOM, seedColor = (System.getProperty("shots.seed") ?: "FF6750A4").toLong(16),
-                themeMode = if (System.getProperty("shots.dark") == "1") ThemeMode.DARK else ThemeMode.LIGHT),
+                themeMode = if (System.getProperty("shots.dark") == "1") ThemeMode.DARK else ThemeMode.LIGHT, language = System.getProperty("shots.lang") ?: "ru"),
             routing = RoutingSettings(rules = listOf(
                 RouteRule(kind = RuleKind.PROCESS, value = "telegram.exe, discord.exe", action = RouteAction.PROXY),
                 RouteRule(kind = RuleKind.DOMAIN, value = "gosuslugi.ru, sberbank.ru", action = RouteAction.DIRECT),

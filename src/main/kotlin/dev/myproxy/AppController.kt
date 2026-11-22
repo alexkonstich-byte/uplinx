@@ -52,6 +52,8 @@ class AppController(private val scope: CoroutineScope) {
     val update = MutableStateFlow<UpdateInfo?>(null)
     val updateProgress = MutableStateFlow<Float?>(null)
     val miniWindow = MutableStateFlow(false)
+    val whatsNew = MutableStateFlow<UpdateInfo?>(null)
+    val showUpdateDetails = MutableStateFlow(false)
 
     private val connectLock = Mutex()
     private var runningSignature: String? = null
@@ -60,6 +62,8 @@ class AppController(private val scope: CoroutineScope) {
     val isConnected get() = core.status.value is CoreStatus.Running
 
     init {
+        I18n.apply(_state.value.settings.language)
+        SubscriptionFetcher.hwid = _state.value.settings.hwid
         if (SystemProxy.isEnabledByUs) runCatching { SystemProxy.restore() }
         scope.launch {
             _state.drop(1).debounce(400).collect { s -> withContext(Dispatchers.IO) { runCatching { Storage.save(s) } } }
@@ -79,7 +83,23 @@ class AppController(private val scope: CoroutineScope) {
                 }
             }
         }
-        if (_state.value.settings.checkUpdates) scope.launch(Dispatchers.IO) { delay(8_000); runCatching { update.value = Updater.check() } }
+        // updates from GitHub Releases: shortly after start, then every 6 hours
+        scope.launch(Dispatchers.IO) {
+            delay(8_000)
+            while (true) {
+                if (_state.value.settings.checkUpdates) runCatching { Updater.check() }.onSuccess { update.value = it }
+                delay(6 * 3_600_000L)
+            }
+        }
+        // "What's new" once after an update
+        scope.launch(Dispatchers.IO) {
+            val seen = _state.value.settings.lastSeenVersion
+            val now = BuildInfo.version
+            if (now != "dev" && seen != now) {
+                if (seen.isNotBlank()) Updater.notesFor(now)?.let { whatsNew.value = it }
+                update { it.copy(settings = it.settings.copy(lastSeenVersion = now)) }
+            }
+        }
     }
 
     fun notify(text: String, action: String? = null, onAction: (() -> Unit)? = null) {
@@ -117,9 +137,9 @@ class AppController(private val scope: CoroutineScope) {
 
     private suspend fun connectInternal() {
         val st = _state.value
-        val node = selectedNode ?: run { notify("Сначала добавьте сервер или подписку"); return }
+        val node = selectedNode ?: run { notify(L("Сначала добавьте сервер или подписку")); return }
         val sub = st.subscriptions.firstOrNull { it.id == node.subscriptionId }
-        if (sub?.expired == true) notify("Подписка «${sub.name}» истекла — сервер может не работать")
+        if (sub?.expired == true) notify(L("Подписка «%1» истекла — сервер может не работать", sub.name))
         lastError.value = null
         val tun = st.settings.connectMode == ConnectMode.TUN
         if (node.needsAmneziaEngine) {
@@ -144,7 +164,7 @@ class AppController(private val scope: CoroutineScope) {
             runningSignature = config
             if (!tun) SystemProxy.enable(st.settings.httpPort, st.settings.socksPort)
             touchLastUsed(node.id)
-            core.log("Подключено: ${node.name} (${st.settings.connectMode.title})")
+            core.log(L("Подключено: %1 (%2)", node.name, st.settings.connectMode.title))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -158,8 +178,8 @@ class AppController(private val scope: CoroutineScope) {
     private fun fail(raw: String) {
         val fe = Errors.explain(raw)
         lastError.value = fe
-        core.log("Ошибка: ${fe.title}\n${fe.details}", 'E')
-        notify("${fe.title}. ${fe.hint}", "Подробнее") { lastError.value = fe; showErrorDetails.value = true }
+        core.log(L("Ошибка: %1\n%2", fe.title, fe.details), 'E')
+        notify("${fe.title}. ${fe.hint}", L("Подробнее")) { lastError.value = fe; showErrorDetails.value = true }
     }
 
     val showErrorDetails = MutableStateFlow(false)
@@ -189,7 +209,7 @@ class AppController(private val scope: CoroutineScope) {
         runCatching { SystemProxy.restore() }
         val fe = Errors.explain(message)
         lastError.value = fe
-        notify("Ядро остановилось: ${fe.title}. Системный прокси отключён", "Подробнее") { showErrorDetails.value = true }
+        notify(L("Ядро остановилось: %1. Системный прокси отключён", fe.title), L("Подробнее")) { showErrorDetails.value = true }
     }
 
     fun shutdown() {
@@ -203,7 +223,7 @@ class AppController(private val scope: CoroutineScope) {
         val st = _state.value
         val node = selectedNode ?: return
         if (!node.needsAmneziaEngine && XrayConfig.build(node, st.settings, st.routing) != runningSignature) {
-            notify("Настройки изменены", "Переподключить") { reconnect() }
+            notify(L("Настройки изменены"), L("Переподключить")) { reconnect() }
         }
     }
 
@@ -235,16 +255,16 @@ class AppController(private val scope: CoroutineScope) {
     }
 
     fun updateCore(force: Boolean = true) = scope.launch {
-        if (isConnected) { notify("Сначала отключитесь"); return@launch }
+        if (isConnected) { notify(L("Сначала отключитесь")); return@launch }
         runCatching { core.installCore(force = force, geo = _state.value.settings.geoSource) }
-            .onSuccess { notify("Ядро обновлено: ${core.version.value ?: "?"}") }
-            .onFailure { notify("Ошибка обновления: ${Errors.explain(it.message.orEmpty()).title}") }
+            .onSuccess { notify(L("Ядро обновлено: %1", core.version.value ?: "?")) }
+            .onFailure { notify(L("Ошибка обновления: %1", Errors.explain(it.message.orEmpty()).title)) }
     }
 
     fun updateGeo() = scope.launch {
         runCatching { core.updateGeo(_state.value.settings.geoSource) }
-            .onSuccess { notify("Гео-базы обновлены"); suggestReconnect() }
-            .onFailure { notify("Ошибка: ${it.message}") }
+            .onSuccess { notify(L("Гео-базы обновлены")); suggestReconnect() }
+            .onFailure { notify(L("Ошибка: %1", it.message)) }
     }
 
     // ================================================================ nodes
@@ -260,12 +280,12 @@ class AppController(private val scope: CoroutineScope) {
     fun deleteNode(node: ProxyNode) {
         val before = _state.value
         update { s -> s.copy(nodes = s.nodes - node) }
-        notify("«${node.name}» удалён", "Отменить") { _state.value = before }
+        notify(L("«%1» удалён", node.name), L("Отменить")) { _state.value = before }
     }
 
     fun setHidden(node: ProxyNode, hidden: Boolean) {
         update { s -> s.copy(hidden = if (hidden) s.hidden + node.identity else s.hidden - node.identity) }
-        if (hidden) notify("«${node.name}» скрыт", "Отменить") { setHidden(node, false) }
+        if (hidden) notify(L("«%1» скрыт", node.name), L("Отменить")) { setHidden(node, false) }
     }
 
     // ================================================================ import
@@ -301,17 +321,17 @@ class AppController(private val scope: CoroutineScope) {
             val before = _state.value.routing
             HappRouting.apply(p, before)?.let { nr ->
                 updateRouting { nr }
-                notify("Профиль маршрутизации применён", "Отменить") { updateRouting { before } }
+                notify(L("Профиль маршрутизации применён"), L("Отменить")) { updateRouting { before } }
                 count++
             }
         }
         if (count > 0) {
             val parts = listOfNotNull(
-                r.nodes.size.takeIf { it > 0 }?.let { "серверов: $it" },
-                r.nestedSubscriptions.size.takeIf { it > 0 }?.let { "подписок: $it" },
-                r.rules.size.takeIf { it > 0 }?.let { "правил: $it" },
+                r.nodes.size.takeIf { it > 0 }?.let { L("серверов: %1", it) },
+                r.nestedSubscriptions.size.takeIf { it > 0 }?.let { L("подписок: %1", it) },
+                r.rules.size.takeIf { it > 0 }?.let { L("правил: %1", it) },
             )
-            if (parts.isNotEmpty()) notify("Добавлено — " + parts.joinToString(", "))
+            if (parts.isNotEmpty()) notify(L("Добавлено — ") + parts.joinToString(", "))
         }
         return count
     }
@@ -323,8 +343,8 @@ class AppController(private val scope: CoroutineScope) {
         val inner = Regex("""^[a-z0-9]+://(?:add|import|sub|install-config)/(.+)$""", RegexOption.IGNORE_CASE).find(t)
             ?.let { URLDecoder.decode(it.groupValues[1], Charsets.UTF_8) } ?: t
         val summary = when {
-            inner.startsWith("http") && !inner.contains('@') -> "Подписка: $inner"
-            else -> Importer.parse(inner).let { r -> "Серверов: ${r.nodes.size}" + if (r.routingProfile != null) ", профиль маршрутизации" else "" }
+            inner.startsWith("http") && !inner.contains('@') -> L("Подписка: %1", inner)
+            else -> Importer.parse(inner).let { r -> L("Серверов: %1", r.nodes.size) + if (r.routingProfile != null) L(", профиль маршрутизации") else "" }
         }
         pendingImport.value = PendingImport(inner, summary)
     }
@@ -334,12 +354,12 @@ class AppController(private val scope: CoroutineScope) {
         files.forEach { f ->
             if (QrScanner.isImage(f)) {
                 val codes = QrScanner.fromFile(f)
-                if (codes.isEmpty()) notify("${f.name}: QR-код не найден") else codes.forEach { total += importText(it) }
+                if (codes.isEmpty()) notify(L("%1: QR-код не найден", f.name)) else codes.forEach { total += importText(it) }
                 return@forEach
             }
             val text = runCatching { f.readText() }.getOrNull() ?: return@forEach
             val n = importText(text, f.nameWithoutExtension)
-            if (n == 0) notify("${f.name}: не распознан формат")
+            if (n == 0) notify(L("%1: не распознан формат", f.name))
             total += n
         }
     }
@@ -350,18 +370,18 @@ class AppController(private val scope: CoroutineScope) {
         // maybe there is a screenshot of a QR code in the clipboard
         val codes = QrScanner.fromClipboard()
         if (codes.isNotEmpty()) { codes.forEach { importText(it) }; return }
-        notify("В буфере обмена нет ссылок, конфигов или QR-кода")
+        notify(L("В буфере обмена нет ссылок, конфигов или QR-кода"))
     }
 
     fun scanScreenQr() = scope.launch(Dispatchers.IO) {
         val codes = QrScanner.fromScreen()
         withContext(Dispatchers.Default) {
-            if (codes.isEmpty()) notify("На экране не найдено QR-кодов. Откройте QR и попробуйте снова")
+            if (codes.isEmpty()) notify(L("На экране не найдено QR-кодов. Откройте QR и попробуйте снова"))
             else codes.forEach { importText(it) }
         }
     }
 
-    fun copyToClipboard(text: String, label: String = "Скопировано") {
+    fun copyToClipboard(text: String, label: String = L("Скопировано")) {
         Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
         notify(label)
     }
@@ -424,8 +444,8 @@ class AppController(private val scope: CoroutineScope) {
 
     fun addSubscription(name: String, url: String) {
         val clean = url.trim()
-        if (_state.value.subscriptions.any { it.url == clean }) { notify("Эта подписка уже добавлена"); return }
-        val sub = Subscription(name = name.ifBlank { "Новая подписка" }, url = clean)
+        if (_state.value.subscriptions.any { it.url == clean }) { notify(L("Эта подписка уже добавлена")); return }
+        val sub = Subscription(name = name.ifBlank { L("Новая подписка") }, url = clean)
         update { it.copy(subscriptions = it.subscriptions + sub) }
         updateSubscription(sub.id)
     }
@@ -439,7 +459,7 @@ class AppController(private val scope: CoroutineScope) {
     fun deleteSubscription(sub: Subscription) {
         val before = _state.value
         update { s -> s.copy(subscriptions = s.subscriptions - sub, nodes = s.nodes.filterNot { it.subscriptionId == sub.id }) }
-        notify("Подписка «${sub.name}» удалена", "Отменить") { _state.value = before }
+        notify(L("Подписка «%1» удалена", sub.name), L("Отменить")) { _state.value = before }
     }
 
     fun updateSubscription(id: String) = scope.launch(Dispatchers.IO) {
@@ -448,6 +468,9 @@ class AppController(private val scope: CoroutineScope) {
         _updating.update { it + id }
         try {
             val res = SubscriptionFetcher.fetch(sub, _state.value.settings.effectiveUserAgent)
+            if (res.subscription.userAgent.isNotBlank() && res.subscription.userAgent != sub.userAgent) {
+                notify(L("«%1» не принимал текущий клиент — подобрана маскировка: %2", res.subscription.name, res.subscription.userAgent.substringBefore('/')))
+            }
             val selected = selectedNode
             update { s ->
                 val old = s.nodes.filter { it.subscriptionId == id }
@@ -464,7 +487,7 @@ class AppController(private val scope: CoroutineScope) {
             // panel-pushed routing: Happ-compatible profile header or rules inside a Clash/Mihomo subscription
             if (_state.value.settings.applyPanelRouting) {
                 res.subscription.routingProfile.takeIf { it.isNotBlank() && it != sub.routingProfile }?.let { p ->
-                    HappRouting.apply(p, _state.value.routing)?.let { nr -> updateRouting { nr }; notify("«${res.subscription.name}»: применён профиль маршрутизации от сервиса") }
+                    HappRouting.apply(p, _state.value.routing)?.let { nr -> updateRouting { nr }; notify(L("«%1»: применён профиль маршрутизации от сервиса", res.subscription.name)) }
                 }
                 if (res.rules.isNotEmpty()) updateRouting { r ->
                     r.copy(rules = res.rules.mapIndexed { i, rule -> rule.copy(id = "panel-$id-$i") } + r.rules.filterNot { it.id.startsWith("panel-$id-") })
@@ -513,13 +536,13 @@ class AppController(private val scope: CoroutineScope) {
     fun relaunchAsAdmin(exit: () -> Unit) {
         needAdmin.value = false
         if (WinUtil.relaunchAsAdmin("--connect")) { shutdown(); exit() }
-        else notify("Запуск от администратора отменён")
+        else notify(L("Запуск от администратора отменён"))
     }
 
     fun checkForUpdates(manual: Boolean = true) = scope.launch(Dispatchers.IO) {
         runCatching { Updater.check() }
-            .onSuccess { u -> update.value = u; if (manual && u == null) notify("У вас последняя версия ${BuildInfo.version}") }
-            .onFailure { if (manual) notify("Не удалось проверить обновления: ${it.message}") }
+            .onSuccess { u -> update.value = u; if (manual && u == null) notify(L("У вас последняя версия %1", BuildInfo.version)) }
+            .onFailure { if (manual) notify(L("Не удалось проверить обновления: %1", it.message)) }
     }
 
     fun installUpdate(exit: () -> Unit) = scope.launch(Dispatchers.IO) {
@@ -529,6 +552,6 @@ class AppController(private val scope: CoroutineScope) {
             updateProgress.value = 0f
             Updater.downloadAndRun(u) { updateProgress.value = it }
         }.onSuccess { shutdown(); exit() }
-            .onFailure { updateProgress.value = null; notify("Ошибка загрузки обновления: ${it.message}") }
+            .onFailure { updateProgress.value = null; notify(L("Ошибка загрузки обновления: %1", it.message)) }
     }
 }

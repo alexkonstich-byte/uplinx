@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.myproxy"
-version = (findProperty("appVersion") as String?) ?: "1.1.1"
+version = (findProperty("appVersion") as String?) ?: "1.2.0"
 
 dependencies {
     implementation(compose.desktop.currentOs)
@@ -59,5 +59,5 @@ tasks.register<JavaExec>("screenshots") {
     dependsOn("testClasses")
     classpath = sourceSets["test"].runtimeClasspath
     mainClass = "dev.myproxy.Screenshots"
-    listOf("myproxy.home", "shots.out", "shots.dark", "shots.seed").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
+    listOf("myproxy.home", "shots.out", "shots.dark", "shots.seed", "shots.lang").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
 }

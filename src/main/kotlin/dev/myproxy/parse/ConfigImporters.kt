@@ -1,5 +1,7 @@
 package dev.myproxy.parse
 
+import dev.myproxy.L
+
 import dev.myproxy.data.Protocol
 import dev.myproxy.data.ProxyNode
 import kotlinx.serialization.json.*
@@ -27,7 +29,7 @@ object WgConfParser {
                 "peer" -> peer.putIfAbsent(k.lowercase(), v) // first peer wins
             }
         }
-        val endpoint = peer["endpoint"] ?: error("В конфиге нет Endpoint")
+        val endpoint = peer["endpoint"] ?: error(L("В конфиге нет Endpoint"))
         val host = if (endpoint.startsWith("[")) endpoint.substringAfter('[').substringBefore(']') else endpoint.substringBeforeLast(':')
         val port = endpoint.substringAfterLast(':').toIntOrNull() ?: 51820
         return ProxyNode(
@@ -262,7 +264,7 @@ object AmneziaParser {
                 // OpenVPN / Cloak / IKEv2 containers have no equivalent here and are skipped
             }
         }
-        if (result.isEmpty()) error("В ключе Amnezia нет поддерживаемых протоколов (AWG, WireGuard, Xray)")
+        if (result.isEmpty()) error(L("В ключе Amnezia нет поддерживаемых протоколов (AWG, WireGuard, Xray)"))
         return result
     }
 }

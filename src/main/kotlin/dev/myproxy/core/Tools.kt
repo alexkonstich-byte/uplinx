@@ -1,5 +1,7 @@
 package dev.myproxy.core
 
+import dev.myproxy.L
+
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
 import com.google.zxing.client.j2se.BufferedImageLuminanceSource
@@ -62,9 +64,12 @@ object Processes {
         .sortedBy { it.lowercase() }
 }
 
-data class UpdateInfo(val version: String, val notes: String, val url: String, val assetUrl: String?)
+data class UpdateInfo(val version: String, val notes: String, val url: String, val assetUrl: String?, val zipUrl: String? = null)
 
-/** Checks this project's GitHub releases; downloads and starts the installer on request. */
+/**
+ * Updates from this project's GitHub Releases. Installed copies download and run the setup .exe;
+ * portable copies (a `portable.txt` next to MyProxy.exe) download the zip and swap files after exit.
+ */
 object Updater {
     private val http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(15)).build()
 
@@ -79,24 +84,40 @@ object Updater {
         return false
     }
 
-    fun check(): UpdateInfo? {
-        val req = HttpRequest.newBuilder(URI("https://api.github.com/repos/${BuildInfo.REPO}/releases/latest"))
-            .header("Accept", "application/vnd.github+json").header("User-Agent", "MyProxy-updater").timeout(Duration.ofSeconds(20)).build()
-        val resp = http.send(req, HttpResponse.BodyHandlers.ofString())
-        if (resp.statusCode() != 200) error("HTTP ${resp.statusCode()}")
-        val o = Json.parseToJsonElement(resp.body()).jsonObject
-        val tag = o["tag_name"]?.jsonPrimitive?.content ?: return null
-        if (BuildInfo.version != "dev" && !newer(tag, BuildInfo.version)) return null
-        val exe = (o["assets"] as? JsonArray)?.map { it.jsonObject }?.firstOrNull { it["name"]?.jsonPrimitive?.content?.endsWith(".exe") == true }
-        return UpdateInfo(tag.trimStart('v'), o["body"]?.jsonPrimitive?.contentOrNull.orEmpty(), o["html_url"]!!.jsonPrimitive.content,
-            exe?.get("browser_download_url")?.jsonPrimitive?.content)
+    /** Folder of the running MyProxy.exe, or null when started from Gradle. */
+    val appDir: File? get() = ProcessHandle.current().info().command().orElse(null)?.let(::File)
+        ?.takeIf { it.name.equals("MyProxy.exe", ignoreCase = true) }?.parentFile
+    val isPortable: Boolean get() = appDir?.let { File(it, "portable.txt").exists() } == true
+
+    private fun request(path: String): HttpRequest = HttpRequest.newBuilder(URI("https://api.github.com/repos/${BuildInfo.REPO}/$path"))
+        .header("Accept", "application/vnd.github+json").header("User-Agent", "MyProxy-updater").timeout(Duration.ofSeconds(20)).build()
+
+    private fun info(o: kotlinx.serialization.json.JsonObject): UpdateInfo {
+        val assets = (o["assets"] as? JsonArray)?.map { it.jsonObject }.orEmpty()
+        fun asset(pred: (String) -> Boolean) = assets.firstOrNull { pred(it["name"]?.jsonPrimitive?.content.orEmpty()) }
+            ?.get("browser_download_url")?.jsonPrimitive?.content
+        return UpdateInfo(
+            o["tag_name"]!!.jsonPrimitive.content.trimStart('v'), o["body"]?.jsonPrimitive?.contentOrNull.orEmpty(), o["html_url"]!!.jsonPrimitive.content,
+            asset { it.endsWith(".exe") }, asset { it.endsWith(".zip") && "portable" in it },
+        )
     }
 
-    /** Downloads the installer and starts it; the caller exits so files can be replaced. */
-    fun downloadAndRun(info: UpdateInfo, onProgress: (Float) -> Unit) {
-        val url = info.assetUrl ?: error("В релизе нет установщика")
-        val target = File(Paths.home, "MyProxy-${info.version}.exe")
+    fun check(): UpdateInfo? {
+        val resp = http.send(request("releases/latest"), HttpResponse.BodyHandlers.ofString())
+        if (resp.statusCode() != 200) error("HTTP ${resp.statusCode()}")
+        val u = info(Json.parseToJsonElement(resp.body()).jsonObject)
+        return u.takeIf { BuildInfo.version == "dev" || newer(it.version, BuildInfo.version) }
+    }
+
+    /** Release notes of a given version, for the "What's new" screen after an update. */
+    fun notesFor(version: String): UpdateInfo? = runCatching {
+        val resp = http.send(request("releases/tags/v$version"), HttpResponse.BodyHandlers.ofString())
+        if (resp.statusCode() == 200) info(Json.parseToJsonElement(resp.body()).jsonObject) else null
+    }.getOrNull()
+
+    private fun download(url: String, target: File, onProgress: (Float) -> Unit) {
         val resp = http.send(HttpRequest.newBuilder(URI(url)).header("User-Agent", "MyProxy-updater").build(), HttpResponse.BodyHandlers.ofInputStream())
+        if (resp.statusCode() !in 200..299) error("HTTP ${resp.statusCode()}")
         val total = resp.headers().firstValueAsLong("content-length").orElse(-1)
         resp.body().use { input ->
             target.outputStream().use { out ->
@@ -104,6 +125,39 @@ object Updater {
                 while (true) { val n = input.read(buf); if (n < 0) break; out.write(buf, 0, n); done += n; if (total > 0) onProgress(done.toFloat() / total) }
             }
         }
+    }
+
+    /** Downloads the update and starts whatever applies it; the caller then exits. */
+    fun downloadAndRun(info: UpdateInfo, onProgress: (Float) -> Unit) {
+        val dir = appDir
+        if (isPortable && dir != null && info.zipUrl != null) {
+            val work = File(Paths.home, "update").apply { deleteRecursively(); mkdirs() }
+            val zip = File(work, "update.zip")
+            download(info.zipUrl, zip, onProgress)
+            java.util.zip.ZipInputStream(zip.inputStream()).use { z ->
+                while (true) {
+                    val e = z.nextEntry ?: break
+                    val f = File(work, "new/" + e.name)
+                    if (!f.canonicalPath.startsWith(work.canonicalPath)) continue // zip-slip guard
+                    if (e.isDirectory) f.mkdirs() else { f.parentFile.mkdirs(); f.outputStream().use { z.copyTo(it) } }
+                }
+            }
+            val src = File(work, "new").listFiles()?.singleOrNull { it.isDirectory } ?: File(work, "new")
+            // wait for this process to exit, mirror the new files over the app folder, start it again
+            val script = File(work, "apply.ps1")
+            script.writeText("""
+                ${'$'}ErrorActionPreference = 'SilentlyContinue'
+                Wait-Process -Id ${ProcessHandle.current().pid()} -Timeout 60
+                robocopy "${src.path}" "${dir.path}" /MIR /R:3 /W:1 /NFL /NDL /NJH /NJS | Out-Null
+                New-Item -ItemType File -Force "${dir.path}\portable.txt" | Out-Null
+                Start-Process "${File(dir, "MyProxy.exe").path}"
+            """.trimIndent())
+            ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", script.path).start()
+            return
+        }
+        val url = info.assetUrl ?: error(L("В релизе нет установщика"))
+        val target = File(Paths.home, "MyProxy-${info.version}.exe")
+        download(url, target, onProgress)
         ProcessBuilder(target.path).start()
     }
 }

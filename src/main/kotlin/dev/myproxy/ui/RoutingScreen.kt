@@ -2,6 +2,8 @@
 
 package dev.myproxy.ui
 
+import dev.myproxy.L
+
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -30,7 +32,7 @@ fun RoutingScreen(app: AppController) {
     var pickApps by remember { mutableStateOf(false) }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("Маршрутизация", style = MaterialTheme.typography.headlineMedium) }
+        item { Text(L("Маршрутизация"), style = MaterialTheme.typography.headlineMedium) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 RoutingMode.entries.forEach { m ->
@@ -44,9 +46,9 @@ fun RoutingScreen(app: AppController) {
                 exit = shrinkVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeOut()) {
                 Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceContainer)) {
                     Column(Modifier.padding(vertical = 8.dp)) {
-                        SwitchRow(Icons.Rounded.Block, "Блокировать рекламу", "geosite:category-ads-all", r.blockAds) { v -> app.updateRouting { it.copy(blockAds = v) } }
-                        SwitchRow(Icons.Rounded.Flag, "Российские сайты напрямую", "geosite:category-ru, .ru/.su/.рф, geoip:ru", r.bypassRu) { v -> app.updateRouting { it.copy(bypassRu = v) } }
-                        SwitchRow(Icons.Rounded.Shield, "Через прокси только заблокированное", "geosite:ru-blocked (нужны гео-базы runetfreedom)", r.proxyBlockedRu) { v ->
+                        SwitchRow(Icons.Rounded.Block, L("Блокировать рекламу"), "geosite:category-ads-all", r.blockAds) { v -> app.updateRouting { it.copy(blockAds = v) } }
+                        SwitchRow(Icons.Rounded.Flag, L("Российские сайты напрямую"), L("geosite:category-ru, .ru/.su/.рф, geoip:ru"), r.bypassRu) { v -> app.updateRouting { it.copy(bypassRu = v) } }
+                        SwitchRow(Icons.Rounded.Shield, L("Через прокси только заблокированное"), L("geosite:ru-blocked (нужны гео-базы runetfreedom)"), r.proxyBlockedRu) { v ->
                             app.updateRouting { it.copy(proxyBlockedRu = v) }
                             if (v && state.settings.geoSource != GeoSource.RUNETFREEDOM) {
                                 app.updateSettings { it.copy(geoSource = GeoSource.RUNETFREEDOM) }
@@ -60,13 +62,13 @@ fun RoutingScreen(app: AppController) {
         item {
             Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceContainer)) {
                 Column(Modifier.padding(vertical = 8.dp)) {
-                    SwitchRow(Icons.Rounded.Router, "Локальная сеть напрямую", "geoip:private — роутер, принтеры, NAS", r.bypassLan) { v -> app.updateRouting { it.copy(bypassLan = v) } }
+                    SwitchRow(Icons.Rounded.Router, L("Локальная сеть напрямую"), L("geoip:private — роутер, принтеры, NAS"), r.bypassLan) { v -> app.updateRouting { it.copy(bypassLan = v) } }
                     Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Dns, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Стратегия доменов", style = MaterialTheme.typography.bodyLarge)
-                            Text("Как сопоставлять домены с IP-правилами", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(L("Стратегия доменов"), style = MaterialTheme.typography.bodyLarge)
+                            Text(L("Как сопоставлять домены с IP-правилами"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         SingleChoiceSegmentedButtonRow {
                             val opts = listOf("AsIs", "IPIfNonMatch", "IPOnDemand")
@@ -81,20 +83,20 @@ fun RoutingScreen(app: AppController) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("Свои правила", style = MaterialTheme.typography.titleLarge)
-                    Text("Проверяются сверху вниз и важнее пресетов", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(L("Свои правила"), style = MaterialTheme.typography.titleLarge)
+                    Text(L("Проверяются сверху вниз и важнее пресетов"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 OutlinedButton(onClick = { pickApps = true }) {
-                    Icon(Icons.Rounded.Apps, null); Spacer(Modifier.width(6.dp)); Text("Приложения")
+                    Icon(Icons.Rounded.Apps, null); Spacer(Modifier.width(6.dp)); Text(L("Приложения"))
                 }
                 Spacer(Modifier.width(8.dp))
                 FilledTonalButton(onClick = { editRule = RouteRule(kind = RuleKind.DOMAIN, value = "", action = RouteAction.PROXY) }) {
-                    Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("Правило")
+                    Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text(L("Правило"))
                 }
             }
         }
         if (r.rules.isEmpty()) item {
-            Text("Например: telegram.exe → прокси, example.org → напрямую, порты 6881-6889 → блок.",
+            Text(L("Например: telegram.exe → прокси, example.org → напрямую, порты 6881-6889 → блок."),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
         }
         items(r.rules, key = { it.id }) { rule ->
@@ -107,7 +109,7 @@ fun RoutingScreen(app: AppController) {
     if (pickApps) AppPickerDialog(onDismiss = { pickApps = false }) { apps, action ->
         pickApps = false
         app.upsertRule(RouteRule(kind = RuleKind.PROCESS, value = apps.joinToString(", "), action = action))
-        if (state.settings.connectMode != ConnectMode.TUN) app.notify("Правила по приложениям надёжнее всего работают в режиме TUN")
+        if (state.settings.connectMode != ConnectMode.TUN) app.notify(L("Правила по приложениям надёжнее всего работают в режиме TUN"))
     }
 }
 
@@ -123,10 +125,10 @@ private fun AppPickerDialog(onDismiss: () -> Unit, onPick: (List<String>, RouteA
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.Apps, null) },
-        title = { Text("Приложения") },
+        title = { Text(L("Приложения")) },
         text = {
             Column(Modifier.width(520.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(query, { query = it }, placeholder = { Text("Поиск по запущенным программам") }, singleLine = true,
+                OutlinedTextField(query, { query = it }, placeholder = { Text(L("Поиск по запущенным программам")) }, singleLine = true,
                     leadingIcon = { Icon(Icons.Rounded.Search, null) }, shape = CircleShape, modifier = Modifier.fillMaxWidth())
                 Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth().height(280.dp)) {
                     LazyColumn(contentPadding = PaddingValues(vertical = 6.dp)) {
@@ -139,7 +141,7 @@ private fun AppPickerDialog(onDismiss: () -> Unit, onPick: (List<String>, RouteA
                         }
                     }
                 }
-                OutlinedTextField(manual, { manual = it }, label = { Text("Или вписать вручную: game.exe, steam.exe") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(manual, { manual = it }, label = { Text(L("Или вписать вручную: game.exe, steam.exe")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
                     RouteAction.entries.forEachIndexed { i, a ->
                         ToggleButton(action == a, { action = a }, Modifier.weight(1f),
@@ -152,9 +154,9 @@ private fun AppPickerDialog(onDismiss: () -> Unit, onPick: (List<String>, RouteA
         },
         confirmButton = {
             val list = (picked + manual.split(',').map { it.trim() }.filter { it.isNotEmpty() }).toList()
-            Button({ onPick(list, action) }, enabled = list.isNotEmpty()) { Text("Добавить правило") }
+            Button({ onPick(list, action) }, enabled = list.isNotEmpty()) { Text(L("Добавить правило")) }
         },
-        dismissButton = { TextButton(onDismiss) { Text("Отмена") } },
+        dismissButton = { TextButton(onDismiss) { Text(L("Отмена")) } },
     )
 }
 
@@ -205,9 +207,9 @@ private fun RuleRow(rule: RouteRule, modifier: Modifier, onToggle: (Boolean) -> 
                 Text(rule.value, style = MaterialTheme.typography.bodyLarge.copy(fontFamily = Mono), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(rule.kind.title, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
             }
-            IconButton(onUp) { Icon(Icons.Rounded.KeyboardArrowUp, "Выше") }
-            IconButton(onDown) { Icon(Icons.Rounded.KeyboardArrowDown, "Ниже") }
-            IconButton(onDelete) { Icon(Icons.Rounded.DeleteOutline, "Удалить") }
+            IconButton(onUp) { Icon(Icons.Rounded.KeyboardArrowUp, L("Выше")) }
+            IconButton(onDown) { Icon(Icons.Rounded.KeyboardArrowDown, L("Ниже")) }
+            IconButton(onDelete) { Icon(Icons.Rounded.DeleteOutline, L("Удалить")) }
             Switch(rule.enabled, onToggle)
         }
     }
@@ -219,28 +221,28 @@ private fun RuleDialog(initial: RouteRule, onDismiss: () -> Unit, onSave: (Route
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.AltRoute, null) },
-        title = { Text("Правило") },
+        title = { Text(L("Правило")) },
         text = {
             Column(Modifier.width(520.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("Что проверяем", style = MaterialTheme.typography.labelLarge)
+                Text(L("Что проверяем"), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     RuleKind.entries.forEach { k ->
                         FilterChip(r.kind == k, { r = r.copy(kind = k) }, label = { Text(k.title) },
                             leadingIcon = { AnimatedVisibility(r.kind == k) { Icon(Icons.Rounded.Check, null, Modifier.size(18.dp)) } })
                     }
                 }
-                OutlinedTextField(r.value, { r = r.copy(value = it) }, label = { Text("Значения через запятую") }, modifier = Modifier.fillMaxWidth(),
+                OutlinedTextField(r.value, { r = r.copy(value = it) }, label = { Text(L("Значения через запятую")) }, modifier = Modifier.fillMaxWidth(),
                     supportingText = {
                         Text(when (r.kind) {
                             RuleKind.DOMAIN -> "youtube.com, full:api.x.com, keyword:google, regexp:\\.ir$"
                             RuleKind.IP -> "1.1.1.1, 10.0.0.0/8, 2001:db8::/32"
                             RuleKind.GEOSITE -> "google, telegram, category-ru, netflix"
                             RuleKind.GEOIP -> "ru, us, telegram, private"
-                            RuleKind.PROCESS -> "telegram.exe, chrome.exe (точнее всего работает в TUN)"
+                            RuleKind.PROCESS -> L("telegram.exe, chrome.exe (точнее всего работает в TUN)")
                             RuleKind.PORT -> "443, 1000-2000"
                         })
                     })
-                Text("Куда отправить", style = MaterialTheme.typography.labelLarge)
+                Text(L("Куда отправить"), style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
                     RouteAction.entries.forEachIndexed { i, a ->
                         ToggleButton(r.action == a, { r = r.copy(action = a) }, Modifier.weight(1f),
@@ -251,7 +253,7 @@ private fun RuleDialog(initial: RouteRule, onDismiss: () -> Unit, onSave: (Route
                 }
             }
         },
-        confirmButton = { Button({ onSave(r.copy(value = r.value.trim())) }, enabled = r.value.isNotBlank()) { Text("Сохранить") } },
-        dismissButton = { TextButton(onDismiss) { Text("Отмена") } },
+        confirmButton = { Button({ onSave(r.copy(value = r.value.trim())) }, enabled = r.value.isNotBlank()) { Text(L("Сохранить")) } },
+        dismissButton = { TextButton(onDismiss) { Text(L("Отмена")) } },
     )
 }

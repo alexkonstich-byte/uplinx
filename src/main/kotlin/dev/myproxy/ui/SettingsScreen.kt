@@ -2,6 +2,8 @@
 
 package dev.myproxy.ui
 
+import dev.myproxy.L
+
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
@@ -36,21 +38,32 @@ fun SettingsScreen(app: AppController) {
     fun set(block: (AppSettings) -> AppSettings) = app.updateSettings(block)
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Настройки", style = MaterialTheme.typography.headlineMedium)
+        Text(L("Настройки"), style = MaterialTheme.typography.headlineMedium)
 
         // ------------------------------------------------ look
-        SettingsGroup("Оформление") {
+        SettingsGroup(L("Оформление")) {
             Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.DarkMode, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(16.dp))
-                Text("Тема", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Text(L("Тема"), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 SingleChoiceSegmentedButtonRow {
                     ThemeMode.entries.forEachIndexed { i, m ->
                         SegmentedButton(s.themeMode == m, { set { it.copy(themeMode = m) } }, SegmentedButtonDefaults.itemShape(i, ThemeMode.entries.size)) { Text(m.title) }
                     }
                 }
             }
-            SwitchRow(Icons.Rounded.Palette, "Цвет из акцента Windows", "Палитра Material You строится из цвета, выбранного в Персонализации", s.colorSource == ColorSource.WINDOWS_ACCENT) { v ->
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Translate, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(16.dp))
+                Text(L("Язык"), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                SingleChoiceSegmentedButtonRow {
+                    val langs = listOf("system" to L("Системный"), "ru" to "Русский", "en" to "English")
+                    langs.forEachIndexed { i, (code, label) ->
+                        SegmentedButton(s.language == code, { set { it.copy(language = code) } }, SegmentedButtonDefaults.itemShape(i, langs.size)) { Text(label) }
+                    }
+                }
+            }
+            SwitchRow(Icons.Rounded.Palette, L("Цвет из акцента Windows"), L("Палитра Material You строится из цвета, выбранного в Персонализации"), s.colorSource == ColorSource.WINDOWS_ACCENT) { v ->
                 set { it.copy(colorSource = if (v) ColorSource.WINDOWS_ACCENT else ColorSource.CUSTOM) }
             }
             AnimatedVisibility(s.colorSource == ColorSource.CUSTOM, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
@@ -58,94 +71,94 @@ fun SettingsScreen(app: AppController) {
                     SeedPresets.forEach { c -> ColorSwatch(Color(c), s.seedColor == c) { set { it.copy(seedColor = c) } } }
                 }
             }
-            Text("Стиль палитры", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 20.dp, top = 12.dp))
+            Text(L("Стиль палитры"), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 20.dp, top = 12.dp))
             FlowRow(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PaletteStyle.entries.forEach { p ->
                     FilterChip(s.paletteStyle == p.name, { set { it.copy(paletteStyle = p.name) } }, label = { Text(p.name) },
                         leadingIcon = { AnimatedVisibility(s.paletteStyle == p.name) { Icon(Icons.Rounded.Check, null, Modifier.size(18.dp)) } })
                 }
             }
-            SwitchRow(Icons.Rounded.Contrast, "Чёрная тема (AMOLED)", "Чистый чёрный фон в тёмном режиме", s.amoled) { v -> set { it.copy(amoled = v) } }
-            SwitchRow(Icons.Rounded.VisibilityOff, "Скрывать адреса", "В списке, на главной и в трее видны только названия и протокол — удобно для стримов и скриншотов", s.maskAddresses) { v -> set { it.copy(maskAddresses = v) } }
+            SwitchRow(Icons.Rounded.Contrast, L("Чёрная тема (AMOLED)"), L("Чистый чёрный фон в тёмном режиме"), s.amoled) { v -> set { it.copy(amoled = v) } }
+            SwitchRow(Icons.Rounded.VisibilityOff, L("Скрывать адреса"), L("В списке, на главной и в трее видны только названия и протокол — удобно для стримов и скриншотов"), s.maskAddresses) { v -> set { it.copy(maskAddresses = v) } }
             val mini by app.miniWindow.collectAsState()
-            SwitchRow(Icons.Rounded.PictureInPicture, "Мини-окно", "Маленькая кнопка подключения поверх всех окон", mini) { v -> app.miniWindow.value = v }
+            SwitchRow(Icons.Rounded.PictureInPicture, L("Мини-окно"), L("Маленькая кнопка подключения поверх всех окон"), mini) { v -> app.miniWindow.value = v }
         }
 
         // ------------------------------------------------ connection
-        SettingsGroup("Подключение") {
-            SwitchRow(Icons.Rounded.Lan, "Режим TUN", "Весь трафик системы через виртуальный адаптер. Нужны права администратора.", s.connectMode == ConnectMode.TUN) { v ->
+        SettingsGroup(L("Подключение")) {
+            SwitchRow(Icons.Rounded.Lan, L("Режим TUN"), L("Весь трафик системы через виртуальный адаптер. Нужны права администратора."), s.connectMode == ConnectMode.TUN) { v ->
                 app.setConnectMode(if (v) ConnectMode.TUN else ConnectMode.SYSTEM_PROXY)
             }
             AnimatedVisibility(s.connectMode == ConnectMode.TUN) {
-                SwitchRow(Icons.Rounded.Security, "Защита от утечек DNS", "Фильтры WFP: DNS и трафик мимо туннеля блокируются", s.tunStrictDns) { v -> set { it.copy(tunStrictDns = v) } }
+                SwitchRow(Icons.Rounded.Security, L("Защита от утечек DNS"), L("Фильтры WFP: DNS и трафик мимо туннеля блокируются"), s.tunStrictDns) { v -> set { it.copy(tunStrictDns = v) } }
             }
-            NumberRow(Icons.Rounded.SettingsEthernet, "Порт SOCKS5", s.socksPort) { v -> set { it.copy(socksPort = v) } }
-            NumberRow(Icons.Rounded.Http, "Порт HTTP", s.httpPort) { v -> set { it.copy(httpPort = v) } }
-            SwitchRow(Icons.Rounded.Devices, "Доступ из локальной сети", "Слушать 0.0.0.0 — другие устройства смогут использовать прокси", s.allowLan) { v -> set { it.copy(allowLan = v) } }
-            SwitchRow(Icons.Rounded.ManageSearch, "Sniffing", "Определять домен по TLS/HTTP для точной маршрутизации", s.sniffing) { v -> set { it.copy(sniffing = v) } }
-            SwitchRow(Icons.Rounded.Language, "IPv6", "Пускать IPv6 через туннель и резолвить AAAA-записи", s.ipv6) { v -> set { it.copy(ipv6 = v) } }
-            SwitchRow(Icons.Rounded.CallSplit, "Mux", "Мультиплексирование (не для Vision и xhttp)", s.mux) { v -> set { it.copy(mux = v) } }
-            TextRow(Icons.Rounded.Dns, "Удалённый DNS", s.remoteDns) { v -> set { it.copy(remoteDns = v) } }
-            TextRow(Icons.Rounded.Dns, "Прямой DNS (для РФ-сайтов)", s.directDns) { v -> set { it.copy(directDns = v) } }
-            TextRow(Icons.Rounded.Speed, "URL проверки задержки", s.pingUrl) { v -> set { it.copy(pingUrl = v) } }
+            NumberRow(Icons.Rounded.SettingsEthernet, L("Порт SOCKS5"), s.socksPort) { v -> set { it.copy(socksPort = v) } }
+            NumberRow(Icons.Rounded.Http, L("Порт HTTP"), s.httpPort) { v -> set { it.copy(httpPort = v) } }
+            SwitchRow(Icons.Rounded.Devices, L("Доступ из локальной сети"), L("Слушать 0.0.0.0 — другие устройства смогут использовать прокси"), s.allowLan) { v -> set { it.copy(allowLan = v) } }
+            SwitchRow(Icons.Rounded.ManageSearch, "Sniffing", L("Определять домен по TLS/HTTP для точной маршрутизации"), s.sniffing) { v -> set { it.copy(sniffing = v) } }
+            SwitchRow(Icons.Rounded.Language, "IPv6", L("Пускать IPv6 через туннель и резолвить AAAA-записи"), s.ipv6) { v -> set { it.copy(ipv6 = v) } }
+            SwitchRow(Icons.Rounded.CallSplit, "Mux", L("Мультиплексирование (не для Vision и xhttp)"), s.mux) { v -> set { it.copy(mux = v) } }
+            TextRow(Icons.Rounded.Dns, L("Удалённый DNS"), s.remoteDns) { v -> set { it.copy(remoteDns = v) } }
+            TextRow(Icons.Rounded.Dns, L("Прямой DNS (для РФ-сайтов)"), s.directDns) { v -> set { it.copy(directDns = v) } }
+            TextRow(Icons.Rounded.Speed, L("URL проверки задержки"), s.pingUrl) { v -> set { it.copy(pingUrl = v) } }
         }
 
         // ------------------------------------------------ core
-        SettingsGroup("Ядро") {
+        SettingsGroup(L("Ядро")) {
             Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Memory, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Xray-core", style = MaterialTheme.typography.bodyLarge)
-                    Text(version?.let { "Версия $it" } ?: "Не установлено — скачается при первом подключении", style = MaterialTheme.typography.bodySmall,
+                    Text(version?.let { L("Версия %1", it) } ?: L("Не установлено — скачается при первом подключении"), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                FilledTonalButton({ app.updateCore() }) { Text(if (version == null) "Скачать" else "Обновить") }
+                FilledTonalButton({ app.updateCore() }) { Text(if (version == null) L("Скачать") else L("Обновить")) }
             }
             Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Public, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(16.dp))
-                Text("Гео-базы", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Text(L("Гео-базы"), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 SingleChoiceSegmentedButtonRow {
                     GeoSource.entries.forEachIndexed { i, g ->
                         SegmentedButton(s.geoSource == g, { set { it.copy(geoSource = g) }; app.updateGeo() }, SegmentedButtonDefaults.itemShape(i, GeoSource.entries.size)) { Text(g.title) }
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                IconButton({ app.updateGeo() }) { Icon(Icons.Rounded.Refresh, "Обновить гео-базы") }
+                IconButton({ app.updateGeo() }) { Icon(Icons.Rounded.Refresh, L("Обновить гео-базы")) }
             }
             Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.BugReport, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(16.dp))
-                Text("Уровень логов", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Text(L("Уровень логов"), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 SingleChoiceSegmentedButtonRow {
                     val lv = listOf("debug", "info", "warning", "error")
                     lv.forEachIndexed { i, l -> SegmentedButton(s.logLevel == l, { set { it.copy(logLevel = l) } }, SegmentedButtonDefaults.itemShape(i, lv.size)) { Text(l) } }
                 }
             }
             Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton({ WinUtil.openFolder(Paths.core) }) { Icon(Icons.Rounded.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text("Папка ядра") }
-                OutlinedButton({ WinUtil.openFolder(Paths.home) }) { Icon(Icons.Rounded.Folder, null); Spacer(Modifier.width(6.dp)); Text("Данные приложения") }
+                OutlinedButton({ WinUtil.openFolder(Paths.core) }) { Icon(Icons.Rounded.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text(L("Папка ядра")) }
+                OutlinedButton({ WinUtil.openFolder(Paths.home) }) { Icon(Icons.Rounded.Folder, null); Spacer(Modifier.width(6.dp)); Text(L("Данные приложения")) }
             }
         }
 
         // ------------------------------------------------ app
-        SettingsGroup("Приложение") {
+        SettingsGroup(L("Приложение")) {
             var auto by remember { mutableStateOf(WinUtil.autostart) }
-            SwitchRow(Icons.Rounded.RocketLaunch, "Запуск вместе с Windows", null, auto) { v -> WinUtil.autostart = v; auto = WinUtil.autostart }
-            SwitchRow(Icons.Rounded.PowerSettingsNew, "Подключаться при запуске", null, s.autoConnect) { v -> set { it.copy(autoConnect = v) } }
-            SwitchRow(Icons.Rounded.Minimize, "Сворачивать в трей при закрытии", null, s.minimizeToTray) { v -> set { it.copy(minimizeToTray = v) } }
+            SwitchRow(Icons.Rounded.RocketLaunch, L("Запуск вместе с Windows"), null, auto) { v -> WinUtil.autostart = v; auto = WinUtil.autostart }
+            SwitchRow(Icons.Rounded.PowerSettingsNew, L("Подключаться при запуске"), null, s.autoConnect) { v -> set { it.copy(autoConnect = v) } }
+            SwitchRow(Icons.Rounded.Minimize, L("Сворачивать в трей при закрытии"), null, s.minimizeToTray) { v -> set { it.copy(minimizeToTray = v) } }
         }
 
         // ------------------------------------------------ panels
-        SettingsGroup("Подписки и панели") {
+        SettingsGroup(L("Подписки и панели")) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Badge, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Представляться клиентом", style = MaterialTheme.typography.bodyLarge)
-                        Text("Некоторые панели (Remnawave, Marzban) отдают полный набор функций только знакомым клиентам",
+                        Text(L("Представляться клиентом"), style = MaterialTheme.typography.bodyLarge)
+                        Text(L("Некоторые панели (Remnawave, Marzban) отдают полный набор функций только знакомым клиентам"),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -159,13 +172,13 @@ fun SettingsScreen(app: AppController) {
                 }
             }
             AnimatedVisibility(s.clientSpoof == ClientSpoof.NONE) {
-                TextRow(Icons.Rounded.Edit, "Свой User-Agent", s.userAgent) { v -> set { it.copy(userAgent = v) } }
+                TextRow(Icons.Rounded.Edit, L("Свой User-Agent"), s.userAgent) { v -> set { it.copy(userAgent = v) } }
             }
-            SwitchRow(Icons.Rounded.AltRoute, "Маршрутизация от сервиса", "Применять профиль роутинга и правила, которые присылает подписка", s.applyPanelRouting) { v -> set { it.copy(applyPanelRouting = v) } }
+            SwitchRow(Icons.Rounded.AltRoute, L("Маршрутизация от сервиса"), L("Применять профиль роутинга и правила, которые присылает подписка"), s.applyPanelRouting) { v -> set { it.copy(applyPanelRouting = v) } }
         }
 
         // ------------------------------------------------ about
-        SettingsGroup("О программе") {
+        SettingsGroup(L("О программе")) {
             val upd by app.update.collectAsState()
             val progress by app.updateProgress.collectAsState()
             Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -177,19 +190,19 @@ fun SettingsScreen(app: AppController) {
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text("MyProxy ${dev.myproxy.core.BuildInfo.version}", style = MaterialTheme.typography.titleMedium)
-                    Text("Xray ${version ?: "—"} · за всё время ↓ ${formatBytes(s.allTimeDown)} · ↑ ${formatBytes(s.allTimeUp)}",
+                    Text(L("Xray %1 · за всё время ↓ %2 · ↑ %3", version ?: "—", formatBytes(s.allTimeDown), formatBytes(s.allTimeUp)),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (upd != null) Button({ app.installUpdate { } }, enabled = progress == null) { Text(if (progress != null) "Загрузка…" else "Обновить до ${upd!!.version}") }
-                else FilledTonalButton({ app.checkForUpdates() }) { Text("Проверить обновления") }
+                if (upd != null) Button({ app.showUpdateDetails.value = true }, enabled = progress == null) { Text(if (progress != null) L("Загрузка…") else L("Обновить до %1", upd!!.version)) }
+                else FilledTonalButton({ app.checkForUpdates() }) { Text(L("Проверить обновления")) }
             }
             progress?.let { p -> LinearWavyProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) }
-            SwitchRow(Icons.Rounded.Update, "Проверять обновления при запуске", null, s.checkUpdates) { v -> set { it.copy(checkUpdates = v) } }
+            SwitchRow(Icons.Rounded.Update, L("Проверять обновления при запуске"), null, s.checkUpdates) { v -> set { it.copy(checkUpdates = v) } }
             Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton({ WinUtil.openUrl("https://github.com/${dev.myproxy.core.BuildInfo.REPO}") }) { Icon(Icons.Rounded.Code, null); Spacer(Modifier.width(6.dp)); Text("GitHub") }
-                OutlinedButton({ WinUtil.openUrl("https://github.com/${dev.myproxy.core.BuildInfo.REPO}/issues") }) { Icon(Icons.Rounded.BugReport, null); Spacer(Modifier.width(6.dp)); Text("Сообщить об ошибке") }
+                OutlinedButton({ WinUtil.openUrl("https://github.com/${dev.myproxy.core.BuildInfo.REPO}/issues") }) { Icon(Icons.Rounded.BugReport, null); Spacer(Modifier.width(6.dp)); Text(L("Сообщить об ошибке")) }
             }
-            Text("Флаги — Twemoji (CC-BY 4.0). Ядро — Xray-core (MPL-2.0).", style = MaterialTheme.typography.bodySmall,
+            Text(L("Флаги — Twemoji (CC-BY 4.0). Ядро — Xray-core (MPL-2.0)."), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         }
     }
@@ -245,7 +258,7 @@ private fun TextRow(icon: ImageVector, label: String, value: String, onCommit: (
         OutlinedTextField(text, { text = it }, label = { Text(label) }, singleLine = true, modifier = Modifier.weight(1f),
             trailingIcon = {
                 AnimatedVisibility(text != value, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
-                    IconButton({ onCommit(text.trim()) }) { Icon(Icons.Rounded.Check, "Применить") }
+                    IconButton({ onCommit(text.trim()) }) { Icon(Icons.Rounded.Check, L("Применить")) }
                 }
             })
     }

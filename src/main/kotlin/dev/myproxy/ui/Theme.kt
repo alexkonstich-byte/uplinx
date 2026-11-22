@@ -33,6 +33,8 @@ fun MyProxyTheme(settings: AppSettings, content: @Composable () -> Unit) {
             systemDark = WinUtil.systemDark()
         }
     }
+    // language follows the setting live; reading I18n.lang in L() recomposes every text
+    SideEffect { dev.myproxy.I18n.apply(settings.language) }
     val seed = when (settings.colorSource) {
         ColorSource.WINDOWS_ACCENT -> accent ?: settings.seedColor
         ColorSource.CUSTOM -> settings.seedColor

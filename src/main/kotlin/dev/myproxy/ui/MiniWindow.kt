@@ -2,6 +2,8 @@
 
 package dev.myproxy.ui
 
+import dev.myproxy.L
+
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,11 +47,11 @@ fun MiniWindow(app: AppController, onOpen: () -> Unit, onClose: () -> Unit) {
                 WindowDraggableArea {
                     Column(Modifier.fillMaxSize().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            IconButton(onOpen, Modifier.size(32.dp)) { Icon(Icons.Rounded.OpenInFull, "Открыть", Modifier.size(18.dp)) }
-                            IconButton(onClose, Modifier.size(32.dp)) { Icon(Icons.Rounded.Close, "Закрыть", Modifier.size(18.dp)) }
+                            IconButton(onOpen, Modifier.size(32.dp)) { Icon(Icons.Rounded.OpenInFull, L("Открыть"), Modifier.size(18.dp)) }
+                            IconButton(onClose, Modifier.size(32.dp)) { Icon(Icons.Rounded.Close, L("Закрыть"), Modifier.size(18.dp)) }
                         }
                         ConnectButton(conn, onClick = app::toggle, size = 120f)
-                        FlagText(node?.name ?: "Нет сервера", style = MaterialTheme.typography.titleSmall)
+                        FlagText(node?.name ?: L("Нет сервера"), style = MaterialTheme.typography.titleSmall)
                         AnimatedVisibility(conn == ConnState.ON) {
                             Text("↓ ${formatSpeed(traffic.down)}  ↑ ${formatSpeed(traffic.up)}", style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
