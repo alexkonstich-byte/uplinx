@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Version from tag
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || v="1.1.0"
+          echo "APP_VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: ./gradlew.bat test "-PappVersion=${{ env.APP_VERSION }}" --no-daemon
+
+      - name: Build installers and portable
+        run: ./gradlew.bat packageExe packageMsi createDistributable "-PappVersion=${{ env.APP_VERSION }}" --no-daemon
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          Get-ChildItem build/compose/binaries/main/exe/*.exe | Copy-Item -Destination "dist/MyProxy-$env:APP_VERSION-setup.exe"
+          Get-ChildItem build/compose/binaries/main/msi/*.msi | Copy-Item -Destination "dist/MyProxy-$env:APP_VERSION.msi"
+          Compress-Archive build/compose/binaries/main/app/MyProxy "dist/MyProxy-$env:APP_VERSION-portable-win64.zip"
+          Get-ChildItem dist | ForEach-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $_.Name } | Set-Content dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyProxy-${{ env.APP_VERSION }}
+          path: dist/*
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: false
+          body_path: RELEASE_NOTES.md

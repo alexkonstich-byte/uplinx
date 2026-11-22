@@ -19,7 +19,44 @@ object XrayConfig {
     fun build(node: ProxyNode, s: AppSettings, r: RoutingSettings): String =
         prettyJson.encodeToString(JsonObject.serializer(), buildObject(node, s, r))
 
-    fun buildObject(node: ProxyNode, s: AppSettings, r: RoutingSettings): JsonObject = buildJsonObject {
+    fun buildObject(node: ProxyNode, s: AppSettings, r: RoutingSettings): JsonObject =
+        if (node.protocol == Protocol.XRAY_CONFIG) buildRaw(node, s) else buildNormal(node, s, r)
+
+    /**
+     * A full user/panel config: its outbounds, balancers, observatory and routing are kept; inbounds are ours
+     * (local SOCKS/HTTP, TUN) and the stats API is added so the speed chart works.
+     */
+    private fun buildRaw(node: ProxyNode, s: AppSettings): JsonObject {
+        val raw = Json.parseToJsonElement(node.rawConfig).jsonObject
+        val tun = s.connectMode == ConnectMode.TUN
+        val outbounds = (raw["outbounds"] as? JsonArray).orEmpty().map { o ->
+            val obj = o.jsonObject
+            if (!tun || obj["protocol"]?.jsonPrimitive?.contentOrNull in setOf("freedom", "blackhole", "dns")) obj
+            else JsonObject(obj + ("streamSettings" to JsonObject(((obj["streamSettings"] as? JsonObject) ?: JsonObject(emptyMap())) + ("sockopt" to sockopt()))))
+        }.toMutableList()
+        val tags = outbounds.mapNotNull { it["tag"]?.jsonPrimitive?.contentOrNull }.toSet()
+        if ("dns-out" !in tags) outbounds += buildJsonObject { put("tag", "dns-out"); put("protocol", "dns") }
+        val routing = (raw["routing"] as? JsonObject) ?: JsonObject(emptyMap())
+        val rules = buildJsonArray {
+            if (tun) add(rule("dns-out") { putJsonArray("inboundTag") { add("tun") }; put("port", "53") })
+            (routing["rules"] as? JsonArray)?.forEach { add(it) }
+        }
+        return JsonObject(raw.filterKeys { it !in setOf("inbounds", "api", "stats", "policy", "remarks", "log") } + buildJsonObject {
+            putJsonObject("log") { put("loglevel", s.logLevel) }
+            putJsonObject("api") { put("tag", "api"); put("listen", "127.0.0.1:${s.apiPort}"); putJsonArray("services") { add("StatsService") } }
+            putJsonObject("stats") {}
+            putJsonObject("policy") { putJsonObject("system") { put("statsOutboundUplink", true); put("statsOutboundDownlink", true) } }
+            putJsonArray("inbounds") {
+                if (tun) add(tunInbound(s))
+                add(localInbound("socks-in", "socks", s.socksPort, s))
+                add(localInbound("http-in", "http", s.httpPort, s))
+            }
+            put("outbounds", JsonArray(outbounds))
+            put("routing", JsonObject(routing + ("rules" to rules)))
+        })
+    }
+
+    private fun buildNormal(node: ProxyNode, s: AppSettings, r: RoutingSettings): JsonObject = buildJsonObject {
         val tun = s.connectMode == ConnectMode.TUN
         putJsonObject("log") { put("loglevel", s.logLevel) }
         putJsonObject("api") {
@@ -78,7 +115,7 @@ object XrayConfig {
             putJsonArray("gateway") { add("172.19.0.1/30") }
             // the DNS the adapter announces; it lies inside the routed range, so queries enter the TUN
             putJsonArray("dns") { add("1.1.1.1") }
-            putJsonArray("autoSystemRoutingTable") { add("0.0.0.0/0"); add("::/0") }
+            putJsonArray("autoSystemRoutingTable") { add("0.0.0.0/0"); if (s.ipv6) add("::/0") }
             if (s.tunStrictDns) putJsonArray("autoSystemWfpBlockLeak") { add("dns"); add("misconfigtun") }
         }
         put("sniffing", sniffing(s))
@@ -148,6 +185,7 @@ object XrayConfig {
                 put("protocol", "hysteria")
                 putJsonObject("settings") { put("version", 2); put("address", n.address); put("port", n.port) }
             }
+            Protocol.XRAY_CONFIG -> error("XRAY_CONFIG is built by buildRaw")
             Protocol.WIREGUARD -> {
                 put("protocol", "wireguard")
                 putJsonObject("settings") {
@@ -290,7 +328,7 @@ object XrayConfig {
                 put("skipFallback", true)
             }
         }
-        put("queryStrategy", "UseIPv4")
+        put("queryStrategy", if (s.ipv6) "UseIP" else "UseIPv4")
     }
 
     // ---------------------------------------------------------------- routing

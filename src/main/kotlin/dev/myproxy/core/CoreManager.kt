@@ -321,13 +321,16 @@ class CoreManager(private val scope: CoroutineScope) {
             while (isActive) {
                 val t0 = System.nanoTime()
                 runCatching {
-                    val p = xray("api", "statsquery", "--server=127.0.0.1:$apiPort", "-pattern", "outbound>>>proxy>>>", "-reset").start()
+                    val p = xray("api", "statsquery", "--server=127.0.0.1:$apiPort", "-pattern", "outbound>>>", "-reset").start()
                     val out = p.inputStream.bufferedReader().readText(); p.waitFor()
                     var up = 0L; var down = 0L
                     json.parseToJsonElement(out).jsonObject["stat"]?.jsonArray?.forEach { e ->
                         val o = e.jsonObject
                         val name = o["name"]?.jsonPrimitive?.content.orEmpty()
                         val v = o["value"]?.jsonPrimitive?.longOrNull ?: 0
+                        // count only traffic that went through a proxy outbound (raw configs have their own tags)
+                        val tag = name.split(">>>").getOrNull(1).orEmpty()
+                        if (tag in setOf("direct", "block", "dns-out", "api") || tag.startsWith("direct") || tag.startsWith("block")) return@forEach
                         if (name.endsWith("uplink")) up += v else if (name.endsWith("downlink")) down += v
                     }
                     _traffic.update { t ->

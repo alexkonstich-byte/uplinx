@@ -60,7 +60,7 @@ fun main(args: Array<String>) {
 
     val startMinimized = "--minimized" in args
     val deepLinks = args.filterNot { it.startsWith("--") }
-    deepLinks.forEach { app.importText(it) }
+    deepLinks.forEach { app.requestImport(it) }
     if ("--connect" in args || app.state.value.settings.autoConnect) app.connect()
 
     application {
@@ -69,10 +69,11 @@ fun main(args: Array<String>) {
         val settings by app.state.collectAsState()
         val status by app.core.status.collectAsState()
         val exit = { app.shutdown(); scope.cancel(); exitApplication() }
+        val mini by app.miniWindow.collectAsState()
 
         LaunchedEffect(Unit) {
             incoming.flow.collect { text ->
-                text.lines().filter { it.isNotBlank() && !it.startsWith("--") }.forEach { app.importText(it) }
+                text.lines().filter { it.isNotBlank() && !it.startsWith("--") }.forEach { app.requestImport(it) }
                 visible = true
                 windowState.isMinimized = false
             }
@@ -94,6 +95,7 @@ fun main(args: Array<String>) {
                 menu = {
                     Item(if (status is CoreStatus.Running) "Отключиться" else "Подключиться", onClick = app::toggle)
                     Item("Открыть", onClick = { visible = true; windowState.isMinimized = false })
+                    Item(if (mini) "Скрыть мини-окно" else "Мини-окно", onClick = { app.miniWindow.value = !mini })
                     Separator()
                     Item("Выход", onClick = exit)
                 },
@@ -112,6 +114,7 @@ fun main(args: Array<String>) {
                 window.minimumSize = java.awt.Dimension(900, 620)
                 AppRoot(app, onExit = exit)
             }
+            if (mini) dev.myproxy.ui.MiniWindow(app, onOpen = { visible = true; windowState.isMinimized = false }, onClose = { app.miniWindow.value = false })
         }
     }
 }

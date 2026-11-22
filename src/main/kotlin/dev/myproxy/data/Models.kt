@@ -6,7 +6,9 @@ import java.util.UUID
 @Serializable
 enum class Protocol(val title: String) {
     VLESS("VLESS"), VMESS("VMess"), TROJAN("Trojan"), SHADOWSOCKS("Shadowsocks"),
-    SOCKS("SOCKS"), HTTP("HTTP"), HYSTERIA2("Hysteria2"), WIREGUARD("WireGuard")
+    SOCKS("SOCKS"), HTTP("HTTP"), HYSTERIA2("Hysteria2"), WIREGUARD("WireGuard"),
+    /** A full Xray client config (balancers, chains, custom routing) run as-is with our inbounds. */
+    XRAY_CONFIG("Xray JSON")
 }
 
 /** One server. Flat on purpose: every share-link format maps into these fields. */
@@ -66,10 +68,18 @@ data class ProxyNode(
     val awg: Map<String, String> = emptyMap(),
     /** Original wg-quick text for AmneziaWG configs, handed to the AmneziaWG engine unchanged. */
     val wgConfText: String = "",
+    /** Full Xray JSON for [Protocol.XRAY_CONFIG] nodes. */
+    val rawConfig: String = "",
+    /** Outbound tags behind a balancer, for latency display; empty for plain nodes. */
+    val balancerMembers: List<String> = emptyList(),
     // bookkeeping
     val subscriptionId: String? = null,
     val rawLink: String = "",
+    val lastUsedAt: Long = 0,
 ) {
+    /** Stable identity across subscription refreshes (used for hidden servers). */
+    val identity: String get() = rawLink.ifBlank { "$protocol|$address|$port|$uuid$password|$name" }
+
     val endpoint get() = if (address.contains(':')) "[$address]:$port" else "$address:$port"
     /** True when the config uses AWG features Xray cannot reproduce (padding, custom headers, I-packets). */
     val needsAmneziaEngine: Boolean
@@ -105,7 +115,19 @@ data class Subscription(
     val webPageUrl: String = "",
     val announce: String = "",
     val lastError: String = "",
-)
+    val pinned: Boolean = false,
+    /** Cached logo from the profile-logo header (file in app data), or empty. */
+    val logoFile: String = "",
+    /** Extra links panels send (website, support, channels): label to URL. */
+    val links: Map<String, String> = emptyMap(),
+    /** Identities of servers the user hid; survive refreshes. */
+    val hidden: Set<String> = emptySet(),
+    /** Routing profile pushed by the panel (Happ-compatible `routing` header), applied on refresh if enabled. */
+    val routingProfile: String = "",
+) {
+    val expired: Boolean get() = expire > 0 && expire * 1000 < System.currentTimeMillis()
+    val usedUp: Boolean get() = total > 0 && upload + download >= total
+}
 
 @Serializable
 enum class RouteAction(val title: String) { PROXY("Прокси"), DIRECT("Напрямую"), BLOCK("Блок") }
@@ -150,6 +172,16 @@ enum class ThemeMode(val title: String) { SYSTEM("Системная"), LIGHT("�
 enum class ColorSource(val title: String) { WINDOWS_ACCENT("Акцент Windows"), CUSTOM("Свой цвет") }
 
 @Serializable
+enum class ClientSpoof(val title: String, val ua: String?) {
+    NONE("Без маскировки", null),
+    HAPP("Happ", "Happ/3.1.0"),
+    INCY("INCY", "INCY/2.4.0"),
+}
+
+@Serializable
+enum class ServerSort(val title: String) { MANUAL("Как в подписке"), NAME("По имени"), PING("По пингу"), LAST_USED("Недавние") }
+
+@Serializable
 enum class GeoSource(val title: String) { XRAY("Стандартные (v2fly)"), RUNETFREEDOM("runetfreedom (РФ)") }
 
 @Serializable
@@ -176,7 +208,19 @@ data class AppSettings(
     val userAgent: String = "v2rayN/7.13",
     val pingUrl: String = "https://www.gstatic.com/generate_204",
     val selectedNodeId: String? = null,
-)
+    val clientSpoof: ClientSpoof = ClientSpoof.NONE,
+    val serverSort: ServerSort = ServerSort.MANUAL,
+    val maskAddresses: Boolean = false,
+    val ipv6: Boolean = true,
+    val showHidden: Boolean = false,
+    val applyPanelRouting: Boolean = true,
+    val checkUpdates: Boolean = true,
+    val allTimeUp: Long = 0,
+    val allTimeDown: Long = 0,
+) {
+    /** UA actually sent to panels: a spoofed client wins over the free-form setting. */
+    val effectiveUserAgent: String get() = clientSpoof.ua ?: userAgent
+}
 
 @Serializable
 data class AppState(
@@ -184,4 +228,6 @@ data class AppState(
     val routing: RoutingSettings = RoutingSettings(),
     val subscriptions: List<Subscription> = emptyList(),
     val nodes: List<ProxyNode> = emptyList(),
+    /** Identities ([ProxyNode.identity]) of hidden servers; kept across subscription refreshes. */
+    val hidden: Set<String> = emptySet(),
 )

@@ -52,10 +52,11 @@ fun SubscriptionsScreen(app: AppController) {
         }
         LazyVerticalGrid(GridCells.Adaptive(380.dp), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            items(state.subscriptions, key = { it.id }) { s ->
+            items(state.subscriptions.sortedByDescending { it.pinned }, key = { it.id }) { s ->
                 SubscriptionCard(s, count = state.nodes.count { it.subscriptionId == s.id }, isUpdating = s.id in updating,
-                    modifier = Modifier.animateItem(),
+                    modifier = Modifier.animateItem(placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec()),
                     onUpdate = { app.updateSubscription(s.id) }, onEdit = { edit = s }, onDelete = { app.deleteSubscription(s) },
+                    onPin = { app.togglePin(s) },
                     onCopy = { app.copyToClipboard(s.url, "Ссылка скопирована") })
             }
         }
@@ -72,7 +73,7 @@ fun SubscriptionsScreen(app: AppController) {
 @Composable
 private fun SubscriptionCard(
     s: Subscription, count: Int, isUpdating: Boolean, modifier: Modifier,
-    onUpdate: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit, onCopy: () -> Unit,
+    onUpdate: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit, onCopy: () -> Unit, onPin: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     var menu by remember { mutableStateOf(false) }
@@ -81,13 +82,13 @@ private fun SubscriptionCard(
     ElevatedCard(shape = RoundedCornerShape(28.dp), modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp).animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                    Surface(shape = PolygonShape(MaterialShapes.Clover4Leaf, if (isUpdating) spin else 0f), color = cs.primaryContainer, modifier = Modifier.fillMaxSize()) {}
-                    Icon(Icons.Rounded.CloudSync, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(22.dp))
-                }
+                SubscriptionLogo(s.logoFile, 44.dp, spin = if (isUpdating) spin else 0f, selected = s.pinned)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(s.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FlagText(s.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f, fill = false))
+                        if (s.pinned) Icon(Icons.Rounded.PushPin, "Закреплена", Modifier.padding(start = 6.dp).size(16.dp), tint = cs.primary)
+                    }
                     Text("$count серв. · обновлено ${formatAgo(s.updatedAt)}", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                 }
                 FilledTonalIconButton(onClick = onUpdate, enabled = !isUpdating) {
@@ -96,6 +97,7 @@ private fun SubscriptionCard(
                 Box {
                     IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, null) }
                     DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp)) {
+                        DropdownMenuItem({ Text(if (s.pinned) "Открепить" else "Закрепить") }, { menu = false; onPin() }, leadingIcon = { Icon(Icons.Rounded.PushPin, null) })
                         DropdownMenuItem({ Text("Изменить") }, { menu = false; onEdit() }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
                         DropdownMenuItem({ Text("Копировать ссылку") }, { menu = false; onCopy() }, leadingIcon = { Icon(Icons.Rounded.Link, null) })
                         if (s.webPageUrl.isNotBlank()) DropdownMenuItem({ Text("Сайт сервиса") }, { menu = false; WinUtil.openUrl(s.webPageUrl) }, leadingIcon = { Icon(Icons.Rounded.OpenInNew, null) })
@@ -105,6 +107,14 @@ private fun SubscriptionCard(
                 }
             }
             AnimatedVisibility(isUpdating) { LinearWavyProgressIndicator(Modifier.fillMaxWidth().padding(top = 12.dp)) }
+            if (s.expired || s.usedUp) {
+                Surface(color = cs.errorContainer, contentColor = cs.onErrorContainer, shape = RoundedCornerShape(50), modifier = Modifier.padding(top = 10.dp)) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                        Text(if (s.expired) "Подписка истекла" else "Трафик исчерпан", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
             if (s.total > 0) {
                 Spacer(Modifier.height(14.dp))
                 val used = s.upload + s.download

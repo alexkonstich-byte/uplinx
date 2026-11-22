@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.myproxy"
-version = "0.1.0"
+version = (findProperty("appVersion") as String?) ?: "1.1.0"
 
 dependencies {
     implementation(compose.desktop.currentOs)
@@ -19,6 +19,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
     implementation("net.java.dev.jna:jna-platform:5.19.1")
     implementation("com.google.zxing:core:3.5.4")
+    implementation("com.google.zxing:javase:3.5.4")
+    implementation("org.yaml:snakeyaml:2.6")
 
     testImplementation(kotlin("test"))
 }
@@ -34,13 +36,13 @@ tasks.test {
 compose.desktop {
     application {
         mainClass = "dev.myproxy.MainKt"
-        jvmArgs += listOf("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8")
+        jvmArgs += listOf("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Dmyproxy.version=${project.version}")
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "MyProxy"
-            packageVersion = "1.0.0"
+            packageVersion = project.version.toString()
             description = "Material You proxy client powered by Xray"
-            modules("java.net.http", "jdk.crypto.ec", "java.naming")
+            modules("java.instrument", "java.net.http", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "jdk.charsets", "jdk.localedata")
             windows {
                 menuGroup = "MyProxy"
                 shortcut = true

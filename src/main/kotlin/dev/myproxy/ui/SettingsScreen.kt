@@ -4,6 +4,7 @@ package dev.myproxy.ui
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -65,6 +66,9 @@ fun SettingsScreen(app: AppController) {
                 }
             }
             SwitchRow(Icons.Rounded.Contrast, "Чёрная тема (AMOLED)", "Чистый чёрный фон в тёмном режиме", s.amoled) { v -> set { it.copy(amoled = v) } }
+            SwitchRow(Icons.Rounded.VisibilityOff, "Скрывать адреса", "В списке, на главной и в трее видны только названия и протокол — удобно для стримов и скриншотов", s.maskAddresses) { v -> set { it.copy(maskAddresses = v) } }
+            val mini by app.miniWindow.collectAsState()
+            SwitchRow(Icons.Rounded.PictureInPicture, "Мини-окно", "Маленькая кнопка подключения поверх всех окон", mini) { v -> app.miniWindow.value = v }
         }
 
         // ------------------------------------------------ connection
@@ -79,6 +83,7 @@ fun SettingsScreen(app: AppController) {
             NumberRow(Icons.Rounded.Http, "Порт HTTP", s.httpPort) { v -> set { it.copy(httpPort = v) } }
             SwitchRow(Icons.Rounded.Devices, "Доступ из локальной сети", "Слушать 0.0.0.0 — другие устройства смогут использовать прокси", s.allowLan) { v -> set { it.copy(allowLan = v) } }
             SwitchRow(Icons.Rounded.ManageSearch, "Sniffing", "Определять домен по TLS/HTTP для точной маршрутизации", s.sniffing) { v -> set { it.copy(sniffing = v) } }
+            SwitchRow(Icons.Rounded.Language, "IPv6", "Пускать IPv6 через туннель и резолвить AAAA-записи", s.ipv6) { v -> set { it.copy(ipv6 = v) } }
             SwitchRow(Icons.Rounded.CallSplit, "Mux", "Мультиплексирование (не для Vision и xhttp)", s.mux) { v -> set { it.copy(mux = v) } }
             TextRow(Icons.Rounded.Dns, "Удалённый DNS", s.remoteDns) { v -> set { it.copy(remoteDns = v) } }
             TextRow(Icons.Rounded.Dns, "Прямой DNS (для РФ-сайтов)", s.directDns) { v -> set { it.copy(directDns = v) } }
@@ -130,10 +135,63 @@ fun SettingsScreen(app: AppController) {
             SwitchRow(Icons.Rounded.RocketLaunch, "Запуск вместе с Windows", null, auto) { v -> WinUtil.autostart = v; auto = WinUtil.autostart }
             SwitchRow(Icons.Rounded.PowerSettingsNew, "Подключаться при запуске", null, s.autoConnect) { v -> set { it.copy(autoConnect = v) } }
             SwitchRow(Icons.Rounded.Minimize, "Сворачивать в трей при закрытии", null, s.minimizeToTray) { v -> set { it.copy(minimizeToTray = v) } }
-            TextRow(Icons.Rounded.Badge, "User-Agent подписок", s.userAgent) { v -> set { it.copy(userAgent = v) } }
         }
-        Text("MyProxy 1.0 · Xray ${version ?: "—"} · Material You", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
+
+        // ------------------------------------------------ panels
+        SettingsGroup("Подписки и панели") {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Badge, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Представляться клиентом", style = MaterialTheme.typography.bodyLarge)
+                        Text("Некоторые панели (Remnawave, Marzban) отдают полный набор функций только знакомым клиентам",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ClientSpoof.entries.forEach { c -> SpoofTile(c, s.clientSpoof == c) { set { it.copy(clientSpoof = c) } } }
+                }
+                AnimatedContent(s.clientSpoof, label = "ua") { c ->
+                    Text("User-Agent: ${c.ua ?: s.userAgent}", style = MaterialTheme.typography.bodySmall.copy(fontFamily = Mono),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp))
+                }
+            }
+            AnimatedVisibility(s.clientSpoof == ClientSpoof.NONE) {
+                TextRow(Icons.Rounded.Edit, "Свой User-Agent", s.userAgent) { v -> set { it.copy(userAgent = v) } }
+            }
+            SwitchRow(Icons.Rounded.AltRoute, "Маршрутизация от сервиса", "Применять профиль роутинга и правила, которые присылает подписка", s.applyPanelRouting) { v -> set { it.copy(applyPanelRouting = v) } }
+        }
+
+        // ------------------------------------------------ about
+        SettingsGroup("О программе") {
+            val upd by app.update.collectAsState()
+            val progress by app.updateProgress.collectAsState()
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                val inf = androidx.compose.animation.core.rememberInfiniteTransition(label = "about")
+                val rot by inf.animateFloat(0f, 360f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(20000, easing = androidx.compose.animation.core.LinearEasing)), label = "r")
+                Box(Modifier.size(56.dp).background(MaterialTheme.colorScheme.primaryContainer, PolygonShape(MaterialShapes.Cookie9Sided, rot)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Shield, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("MyProxy ${dev.myproxy.core.BuildInfo.version}", style = MaterialTheme.typography.titleMedium)
+                    Text("Xray ${version ?: "—"} · за всё время ↓ ${formatBytes(s.allTimeDown)} · ↑ ${formatBytes(s.allTimeUp)}",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (upd != null) Button({ app.installUpdate { } }, enabled = progress == null) { Text(if (progress != null) "Загрузка…" else "Обновить до ${upd!!.version}") }
+                else FilledTonalButton({ app.checkForUpdates() }) { Text("Проверить обновления") }
+            }
+            progress?.let { p -> LinearWavyProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) }
+            SwitchRow(Icons.Rounded.Update, "Проверять обновления при запуске", null, s.checkUpdates) { v -> set { it.copy(checkUpdates = v) } }
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton({ WinUtil.openUrl("https://github.com/${dev.myproxy.core.BuildInfo.REPO}") }) { Icon(Icons.Rounded.Code, null); Spacer(Modifier.width(6.dp)); Text("GitHub") }
+                OutlinedButton({ WinUtil.openUrl("https://github.com/${dev.myproxy.core.BuildInfo.REPO}/issues") }) { Icon(Icons.Rounded.BugReport, null); Spacer(Modifier.width(6.dp)); Text("Сообщить об ошибке") }
+            }
+            Text("Флаги — Twemoji (CC-BY 4.0). Ядро — Xray-core (MPL-2.0).", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        }
     }
 }
 
@@ -142,6 +200,27 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
     SectionTitle(title)
     Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceContainer)) {
         Column(Modifier.padding(vertical = 8.dp), content = content)
+    }
+}
+
+/** Square tile picker for the client the app presents itself as to panels. */
+@Composable
+private fun SpoofTile(c: ClientSpoof, selected: Boolean, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val bg by animateColorAsState(if (selected) cs.primary else cs.surfaceContainerHighest, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "spoof")
+    val fg by animateColorAsState(if (selected) cs.onPrimary else cs.onSurfaceVariant, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "spooff")
+    val corner by animateDpAsState(if (selected) 28.dp else 16.dp, MaterialTheme.motionScheme.fastSpatialSpec(), label = "spoofc")
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Surface(onClick = onClick, shape = RoundedCornerShape(corner), color = bg, contentColor = fg, modifier = Modifier.size(72.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                when (c) {
+                    ClientSpoof.NONE -> Icon(Icons.Rounded.Block, null, Modifier.size(32.dp))
+                    ClientSpoof.HAPP -> Text("H", style = MaterialTheme.typography.headlineMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Black)
+                    ClientSpoof.INCY -> Text("INCY", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                }
+            }
+        }
+        Text(c.title, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
     }
 }
 

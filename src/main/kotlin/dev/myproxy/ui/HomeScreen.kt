@@ -34,6 +34,7 @@ fun HomeScreen(app: AppController, onOpenServers: () -> Unit) {
     val status by app.core.status.collectAsState()
     val traffic by app.core.traffic.collectAsState()
     val pings by app.pings.collectAsState()
+    val testing by app.testing.collectAsState()
     val node = state.nodes.firstOrNull { it.id == state.settings.selectedNodeId } ?: state.nodes.firstOrNull()
 
     val conn = when (status) {
@@ -54,10 +55,13 @@ fun HomeScreen(app: AppController, onOpenServers: () -> Unit) {
             }
         }
         val cards: @Composable ColumnScope.() -> Unit = {
-            CurrentServerCard(node?.name, node?.let { "${it.protocol.title} · ${it.transportLabel}" }, node?.id?.let { pings[it] }, node?.needsAmneziaEngine == true,
+            CurrentServerCard(node?.name, node?.let { (if (state.settings.maskAddresses) "" else it.endpoint + " · ") + "${it.protocol.title} · ${it.transportLabel}" }, node?.id?.let { pings[it] }, node?.id in testing, node?.needsAmneziaEngine == true,
                 onClick = onOpenServers, onPing = app::pingCurrentReal)
             TrafficCard(traffic, conn == ConnState.ON)
             val sub = state.subscriptions.firstOrNull { it.id == node?.subscriptionId }
+            if (sub != null && (sub.expired || sub.usedUp)) AssistChip({}, label = { Text(if (sub.expired) "Подписка «${sub.name}» истекла" else "Трафик подписки «${sub.name}» исчерпан") },
+                leadingIcon = { Icon(Icons.Rounded.ErrorOutline, null) }, border = null,
+                colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.errorContainer, labelColor = MaterialTheme.colorScheme.onErrorContainer, leadingIconContentColor = MaterialTheme.colorScheme.onErrorContainer))
             AnimatedVisibility(sub != null && (sub.total > 0 || sub.expire > 0), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                 sub?.let { SubscriptionQuotaCard(it.name, it.upload + it.download, it.total, it.expire) }
             }
@@ -149,7 +153,7 @@ private fun ModeSwitchers(connectMode: ConnectMode, routingMode: RoutingMode, ap
 }
 
 @Composable
-private fun CurrentServerCard(name: String?, subtitle: String?, ping: Int?, amnezia: Boolean, onClick: () -> Unit, onPing: () -> Unit) {
+private fun CurrentServerCard(name: String?, subtitle: String?, ping: Int?, testing: Boolean, amnezia: Boolean, onClick: () -> Unit, onPing: () -> Unit) {
     ElevatedCard(onClick = onClick, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
@@ -160,13 +164,13 @@ private fun CurrentServerCard(name: String?, subtitle: String?, ping: Int?, amne
             Column(Modifier.weight(1f)) {
                 Text("Сервер", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 AnimatedContent(name, transitionSpec = { (fadeIn() + slideInHorizontally { it / 3 }) togetherWith (fadeOut() + slideOutHorizontally { -it / 3 }) }, label = "srv") { n ->
-                    Text(n ?: "Не выбран", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    FlagText(n ?: "Не выбран", style = MaterialTheme.typography.titleLarge)
                 }
                 if (subtitle != null) Text(subtitle + if (amnezia) " · движок AmneziaWG" else "", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (name != null) {
-                PingChip(ping)
+                PingChip(ping, testing)
                 IconButton(onClick = onPing) { Icon(Icons.Rounded.Speed, "Проверить задержку") }
             }
             Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)

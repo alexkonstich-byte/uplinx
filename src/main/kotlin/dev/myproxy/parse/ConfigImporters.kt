@@ -79,17 +79,41 @@ object XrayJsonParser {
     fun parse(text: String): List<ProxyNode> {
         val root = json.parseToJsonElement(text)
         val configs = if (root is JsonArray) root.map { it.jsonObject } else listOf(root.jsonObject)
-        return configs.flatMap { cfg ->
-            val remarks = cfg["remarks"]?.jsonPrimitive?.contentOrNull
-            val outs = cfg["outbounds"]?.jsonArray?.mapNotNull { it as? JsonObject }.orEmpty()
-            val proxies = outs.mapNotNull { runCatching { outbound(it) }.getOrNull() }
-            proxies.mapIndexed { i, n ->
-                n.copy(name = when {
-                    remarks != null && proxies.size == 1 -> remarks
-                    remarks != null -> "$remarks · ${i + 1}"
-                    else -> n.name
-                })
-            }
+        return configs.flatMap { parseConfig(it) }
+    }
+
+    private val notProxy = setOf("freedom", "blackhole", "dns", "loopback", "dokodemo-door", "tunnel")
+
+    /**
+     * A config with balancers or several proxy outbounds wired by routing is kept whole (one XRAY_CONFIG node)
+     * so nothing is lost; a simple one-outbound config becomes an ordinary editable server.
+     */
+    fun parseConfig(cfg: JsonObject): List<ProxyNode> {
+        val remarks = cfg["remarks"]?.jsonPrimitive?.contentOrNull
+        val outs = cfg["outbounds"]?.jsonArray?.mapNotNull { it as? JsonObject }.orEmpty()
+        val proxyOuts = outs.filter { it.str("protocol") !in notProxy }
+        val balancers = cfg.obj("routing")?.arr("balancers")?.mapNotNull { it as? JsonObject }.orEmpty()
+        val chained = proxyOuts.any { it.obj("proxySettings") != null || it.obj("streamSettings")?.obj("sockopt")?.str("dialerProxy")?.isNotBlank() == true }
+        if (balancers.isNotEmpty() || chained) {
+            val first = proxyOuts.firstNotNullOfOrNull { runCatching { outbound(it) }.getOrNull() }
+            val selectors = balancers.flatMap { b -> b.arr("selector")?.map { it.jsonPrimitive.content }.orEmpty() }
+            val members = proxyOuts.map { it.str("tag") }.filter { t -> t.isNotBlank() && selectors.any { t.startsWith(it) } }
+            return listOf(ProxyNode(
+                name = remarks ?: first?.name ?: "Xray config",
+                protocol = Protocol.XRAY_CONFIG,
+                address = first?.address ?: "", port = first?.port ?: 0,
+                network = if (balancers.isNotEmpty()) "balancer" else "chain",
+                rawConfig = cfg.toString(),
+                balancerMembers = members,
+            ))
+        }
+        val proxies = proxyOuts.mapNotNull { runCatching { outbound(it) }.getOrNull() }
+        return proxies.mapIndexed { i, n ->
+            n.copy(name = when {
+                remarks != null && proxies.size == 1 -> remarks
+                remarks != null -> "$remarks · ${i + 1}"
+                else -> n.name
+            })
         }
     }
 

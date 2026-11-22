@@ -4,6 +4,7 @@ package dev.myproxy.ui
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,6 +27,7 @@ fun RoutingScreen(app: AppController) {
     val state by app.state.collectAsState()
     val r = state.routing
     var editRule by remember { mutableStateOf<RouteRule?>(null) }
+    var pickApps by remember { mutableStateOf(false) }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Маршрутизация", style = MaterialTheme.typography.headlineMedium) }
@@ -82,6 +84,10 @@ fun RoutingScreen(app: AppController) {
                     Text("Свои правила", style = MaterialTheme.typography.titleLarge)
                     Text("Проверяются сверху вниз и важнее пресетов", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                OutlinedButton(onClick = { pickApps = true }) {
+                    Icon(Icons.Rounded.Apps, null); Spacer(Modifier.width(6.dp)); Text("Приложения")
+                }
+                Spacer(Modifier.width(8.dp))
                 FilledTonalButton(onClick = { editRule = RouteRule(kind = RuleKind.DOMAIN, value = "", action = RouteAction.PROXY) }) {
                     Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("Правило")
                 }
@@ -98,6 +104,58 @@ fun RoutingScreen(app: AppController) {
         }
     }
     editRule?.let { rule -> RuleDialog(rule, onDismiss = { editRule = null }) { app.upsertRule(it); editRule = null } }
+    if (pickApps) AppPickerDialog(onDismiss = { pickApps = false }) { apps, action ->
+        pickApps = false
+        app.upsertRule(RouteRule(kind = RuleKind.PROCESS, value = apps.joinToString(", "), action = action))
+        if (state.settings.connectMode != ConnectMode.TUN) app.notify("Правила по приложениям надёжнее всего работают в режиме TUN")
+    }
+}
+
+/** Windows' answer to Android's per-app VPN: pick running programs and send them through proxy, direct or block. */
+@Composable
+private fun AppPickerDialog(onDismiss: () -> Unit, onPick: (List<String>, RouteAction) -> Unit) {
+    val all = remember { dev.myproxy.core.Processes.running() }
+    var query by remember { mutableStateOf("") }
+    var picked by remember { mutableStateOf(setOf<String>()) }
+    var action by remember { mutableStateOf(RouteAction.PROXY) }
+    var manual by remember { mutableStateOf("") }
+    val shown = all.filter { query.isBlank() || it.contains(query, ignoreCase = true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Rounded.Apps, null) },
+        title = { Text("Приложения") },
+        text = {
+            Column(Modifier.width(520.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(query, { query = it }, placeholder = { Text("Поиск по запущенным программам") }, singleLine = true,
+                    leadingIcon = { Icon(Icons.Rounded.Search, null) }, shape = CircleShape, modifier = Modifier.fillMaxWidth())
+                Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth().height(280.dp)) {
+                    LazyColumn(contentPadding = PaddingValues(vertical = 6.dp)) {
+                        items(shown, key = { it }) { exe ->
+                            Row(Modifier.fillMaxWidth().clickable { picked = if (exe in picked) picked - exe else picked + exe }.padding(horizontal = 12.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(exe in picked, { picked = if (it) picked + exe else picked - exe })
+                                Text(exe, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Mono))
+                            }
+                        }
+                    }
+                }
+                OutlinedTextField(manual, { manual = it }, label = { Text("Или вписать вручную: game.exe, steam.exe") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+                    RouteAction.entries.forEachIndexed { i, a ->
+                        ToggleButton(action == a, { action = a }, Modifier.weight(1f),
+                            shapes = when (i) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); RouteAction.entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }) {
+                            Text(a.title)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            val list = (picked + manual.split(',').map { it.trim() }.filter { it.isNotEmpty() }).toList()
+            Button({ onPick(list, action) }, enabled = list.isNotEmpty()) { Text("Добавить правило") }
+        },
+        dismissButton = { TextButton(onDismiss) { Text("Отмена") } },
+    )
 }
 
 @Composable

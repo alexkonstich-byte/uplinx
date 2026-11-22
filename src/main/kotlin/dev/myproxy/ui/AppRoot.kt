@@ -128,10 +128,11 @@ fun AppRoot(app: AppController, onExit: () -> Unit, initial: Screen = Screen.HOM
                     Icon(Icons.Rounded.FileDownload, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.height(12.dp))
                     Text("Отпустите, чтобы импортировать", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Text(".conf (WireGuard / AmneziaWG), .json (Xray), .vpn / .txt со ссылками", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(".conf (WireGuard / AmneziaWG), .json (Xray / sing-box), .yaml (Clash), .txt со ссылками, картинки с QR", color = MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
         }
+        UpdateBanner(app, onExit)
     }
 
     if (needAdmin) AlertDialog(
@@ -141,6 +142,51 @@ fun AppRoot(app: AppController, onExit: () -> Unit, initial: Screen = Screen.HOM
         text = { Text("Для TUN и AmneziaWG Windows требует запуск от администратора. Перезапустить MyProxy с правами администратора и сразу подключиться?") },
         confirmButton = { Button({ app.relaunchAsAdmin(onExit) }) { Text("Перезапустить") } },
         dismissButton = { TextButton({ app.needAdmin.value = false }) { Text("Отмена") } },
+    )
+    val pending by app.pendingImport.collectAsState()
+    pending?.let { p ->
+        AlertDialog(
+            onDismissRequest = { app.pendingImport.value = null },
+            icon = { Icon(Icons.Rounded.AddLink, null) },
+            title = { Text("Добавить?") },
+            text = {
+                Column {
+                    Text("Ссылка открыта из другого приложения. Проверьте, что вы ей доверяете.")
+                    Spacer(Modifier.height(10.dp))
+                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                        Text(p.summary, Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium, maxLines = 4)
+                    }
+                }
+            },
+            confirmButton = { Button({ app.pendingImport.value = null; app.importText(p.text) }) { Text("Добавить") } },
+            dismissButton = { TextButton({ app.pendingImport.value = null }) { Text("Отмена") } },
+        )
+    }
+    val showErr by app.showErrorDetails.collectAsState()
+    val err by app.lastError.collectAsState()
+    if (showErr && err != null) AlertDialog(
+        onDismissRequest = { app.showErrorDetails.value = false },
+        icon = { Icon(Icons.Rounded.ErrorOutline, null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text(err!!.title) },
+        text = {
+            Column(Modifier.width(560.dp)) {
+                Text(err!!.hint)
+                Spacer(Modifier.height(12.dp))
+                Text("Технические детали", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(err!!.details, Modifier.padding(12.dp).heightIn(max = 220.dp), style = MaterialTheme.typography.bodySmall.copy(fontFamily = Mono))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton({ app.showErrorDetails.value = false }) { Text("Закрыть") } },
+        dismissButton = {
+            Row {
+                TextButton({ app.copyToClipboard(err!!.details) }) { Text("Копировать") }
+                TextButton({ app.showErrorDetails.value = false; screen = Screen.LOGS }) { Text("Логи") }
+            }
+        },
     )
     if (needAmnezia) AlertDialog(
         onDismissRequest = { app.needAmnezia.value = false },
@@ -163,5 +209,30 @@ private fun RailLogo(status: CoreStatus) {
     val icon by animateColorAsState(if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer, label = "li")
     Box(Modifier.size(52.dp).background(color, MorphShape(morph, p, rot)), contentAlignment = Alignment.Center) {
         Icon(Icons.Rounded.Shield, null, tint = icon)
+    }
+}
+
+@Composable
+private fun UpdateBanner(app: AppController, onExit: () -> Unit) {
+    val upd by app.update.collectAsState()
+    var updDismissed by remember { mutableStateOf(false) }
+    upd?.let { u ->
+        if (!updDismissed) Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.TopEnd) {
+            ElevatedCard(shape = RoundedCornerShape(24.dp), modifier = Modifier.width(360.dp)) {
+                Column(Modifier.padding(18.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Доступна версия ${u.version}", style = MaterialTheme.typography.titleMedium)
+                    }
+                    if (u.notes.isNotBlank()) Text(u.notes.lineSequence().filter { it.isNotBlank() }.take(4).joinToString("\n"), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4, modifier = Modifier.padding(top = 8.dp))
+                    Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.End) {
+                        TextButton({ updDismissed = true }) { Text("Позже") }
+                        Button({ updDismissed = true; app.installUpdate(onExit) }) { Text("Обновить") }
+                    }
+                }
+            }
+        }
     }
 }

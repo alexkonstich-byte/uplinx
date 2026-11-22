@@ -35,6 +35,10 @@ import androidx.graphics.shapes.RoundedPolygon
 import dev.myproxy.PING_FAILED
 import dev.myproxy.PING_TESTING
 import dev.myproxy.data.Protocol
+import dev.myproxy.data.ProxyNode
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.ui.unit.em
+import androidx.compose.material.icons.rounded.CloudSync
 import kotlin.math.max
 
 // ==================================================================== shapes
@@ -159,12 +163,17 @@ fun RollingText(text: String, style: androidx.compose.ui.text.TextStyle, color: 
     }
 }
 
+/**
+ * Delay chip. While a new probe runs the previous number stays, struck through, next to a small indicator —
+ * so a click on "ping" never looks ignored.
+ */
 @Composable
-fun PingChip(ping: Int?, modifier: Modifier = Modifier) {
+fun PingChip(ping: Int?, testing: Boolean = false, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     val (bg, fg) = when {
-        ping == null -> cs.surfaceContainerHigh to cs.onSurfaceVariant
-        ping == PING_TESTING -> cs.secondaryContainer to cs.onSecondaryContainer
+        testing && (ping == null || ping == PING_TESTING) -> cs.secondaryContainer to cs.onSecondaryContainer
+        testing -> cs.surfaceContainerHigh to cs.onSurfaceVariant
+        ping == null || ping == PING_TESTING -> cs.surfaceContainerHigh to cs.onSurfaceVariant
         ping < 0 -> cs.errorContainer to cs.onErrorContainer
         ping < 150 -> cs.tertiaryContainer to cs.onTertiaryContainer
         ping < 400 -> cs.primaryContainer to cs.onPrimaryContainer
@@ -173,16 +182,101 @@ fun PingChip(ping: Int?, modifier: Modifier = Modifier) {
     val bgA by animateColorAsState(bg, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "pbg")
     val fgA by animateColorAsState(fg, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "pfg")
     Surface(color = bgA, contentColor = fgA, shape = CircleShape, modifier = modifier.animateContentSize(MaterialTheme.motionScheme.fastSpatialSpec())) {
-        Box(Modifier.padding(horizontal = 10.dp, vertical = 4.dp).heightIn(min = 18.dp), contentAlignment = Alignment.Center) {
-            AnimatedContent(ping, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) }, label = "ping") { p ->
-                when {
-                    p == PING_TESTING -> LoadingIndicator(Modifier.size(18.dp), color = fgA)
-                    p == null -> Text("—", style = MaterialTheme.typography.labelMedium)
-                    p == PING_FAILED || p < 0 -> Text("таймаут", style = MaterialTheme.typography.labelMedium)
-                    else -> Text("$p мс", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                }
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp).heightIn(min = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            AnimatedVisibility(testing, enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
+                LoadingIndicator(Modifier.size(18.dp).padding(end = 4.dp), color = fgA)
+            }
+            val label = when {
+                ping == null || ping == PING_TESTING -> if (testing) null else "—"
+                ping < 0 -> "таймаут"
+                else -> "$ping мс"
+            }
+            if (label != null) AnimatedContent(label, transitionSpec = { (fadeIn(tween(200)) + slideInVertically { it / 2 }) togetherWith (fadeOut(tween(120)) + slideOutVertically { -it / 2 }) }, label = "ping") { l ->
+                Text(l, style = MaterialTheme.typography.labelMedium.copy(
+                    textDecoration = if (testing) androidx.compose.ui.text.style.TextDecoration.LineThrough else null),
+                    fontWeight = if (testing) FontWeight.Normal else FontWeight.SemiBold)
             }
         }
+    }
+}
+
+// ==================================================================== flags (Twemoji, CC-BY 4.0)
+
+private val flagCache = java.util.concurrent.ConcurrentHashMap<String, androidx.compose.ui.graphics.painter.Painter?>()
+
+@Suppress("DEPRECATION")
+@Composable
+private fun flagPainter(id: String): androidx.compose.ui.graphics.painter.Painter? {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    return remember(id) {
+        flagCache.getOrPut(id) {
+            Thread.currentThread().contextClassLoader.getResourceAsStream("flags/$id.svg")?.use { androidx.compose.ui.res.loadSvgPainter(it, density) }
+        }
+    }
+}
+
+private fun isRegional(cp: Int) = cp in 0x1F1E6..0x1F1FF
+
+/** Text where every flag emoji pair is drawn as a Twemoji flag — Windows fonts have no colour flags. */
+@Composable
+fun FlagText(
+    text: String, modifier: Modifier = Modifier, style: androidx.compose.ui.text.TextStyle = LocalTextStyle.current,
+    color: Color = Color.Unspecified, fontWeight: FontWeight? = null, maxLines: Int = 1,
+) {
+    val (annotated, ids) = remember(text) {
+        val ids = mutableSetOf<String>()
+        val a = androidx.compose.ui.text.buildAnnotatedString {
+            var i = 0
+            while (i < text.length) {
+                val cp = text.codePointAt(i)
+                val n1 = Character.charCount(cp)
+                if (isRegional(cp) && i + n1 < text.length) {
+                    val cp2 = text.codePointAt(i + n1)
+                    if (isRegional(cp2)) {
+                        val id = "%x-%x".format(cp, cp2)
+                        ids += id
+                        appendInlineContent(id, text.substring(i, i + n1 + Character.charCount(cp2)))
+                        i += n1 + Character.charCount(cp2)
+                        continue
+                    }
+                }
+                append(text.substring(i, i + n1)); i += n1
+            }
+        }
+        a to ids
+    }
+    val inline = ids.associateWith { id ->
+        androidx.compose.foundation.text.InlineTextContent(
+            androidx.compose.ui.text.Placeholder(1.35.em, 1.em, androidx.compose.ui.text.PlaceholderVerticalAlign.TextCenter)
+        ) {
+            val p = flagPainter(id)
+            if (p != null) androidx.compose.foundation.Image(p, null, Modifier.fillMaxSize().padding(end = 3.dp))
+        }
+    }
+    Text(annotated, modifier, color = color, style = style, fontWeight = fontWeight, maxLines = maxLines,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, inlineContent = inline)
+}
+
+fun ProxyNode.displayEndpoint(mask: Boolean) = if (mask) protocol.title else "$endpoint · ${protocol.title}"
+
+/** Subscription logo from the panel's profile-logo header, or a shaped icon. */
+@Suppress("DEPRECATION")
+@Composable
+fun SubscriptionLogo(logoFile: String, size: androidx.compose.ui.unit.Dp, spin: Float = 0f, selected: Boolean = false) {
+    val cs = MaterialTheme.colorScheme
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val painter = remember(logoFile) {
+        runCatching {
+            val f = java.io.File(logoFile)
+            if (!f.exists()) null
+            else if (f.extension == "svg") f.inputStream().use { androidx.compose.ui.res.loadSvgPainter(it, density) }
+            else androidx.compose.ui.graphics.painter.BitmapPainter(org.jetbrains.skia.Image.makeFromEncoded(f.readBytes()).toComposeImageBitmap())
+        }.getOrNull()
+    }
+    val shape = if (selected) androidx.compose.foundation.shape.RoundedCornerShape(size / 4) else PolygonShape(MaterialShapes.Clover4Leaf, spin)
+    Box(Modifier.size(size).clip(shape).background(if (painter == null) cs.primaryContainer else cs.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+        if (painter != null) androidx.compose.foundation.Image(painter, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+        else Icon(androidx.compose.material.icons.Icons.Rounded.CloudSync, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(size / 2))
     }
 }
 
@@ -203,6 +297,7 @@ fun ProtocolAvatar(protocol: Protocol, selected: Boolean, modifier: Modifier = M
             when (protocol) {
                 Protocol.VLESS -> "VL"; Protocol.VMESS -> "VM"; Protocol.TROJAN -> "TR"; Protocol.SHADOWSOCKS -> "SS"
                 Protocol.SOCKS -> "S5"; Protocol.HTTP -> "HT"; Protocol.HYSTERIA2 -> "H2"; Protocol.WIREGUARD -> "WG"
+                Protocol.XRAY_CONFIG -> "{ }"
             },
             color = fg, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
         )

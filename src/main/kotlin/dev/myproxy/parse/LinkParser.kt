@@ -25,34 +25,8 @@ object LinkParser {
 
     val supportedSchemes = setOf("vless", "vmess", "trojan", "ss", "socks", "socks5", "http", "https", "hysteria2", "hy2", "wireguard", "wg", "vpn")
 
-    /** Parses every link found in [text] (one per line, or a base64 blob of lines). */
-    fun parseMany(text: String, nameHint: String? = null): List<ProxyNode> {
-        val body = text.trim().removePrefix("﻿")
-        // whole-document formats first
-        if (WgConfParser.looksLike(body)) return listOf(WgConfParser.parse(body, nameHint))
-        if (XrayJsonParser.looksLike(body)) return runCatching { XrayJsonParser.parse(body) }.getOrDefault(emptyList())
-        val lines = if (looksLikeLinks(body)) body else decodeBase64OrNull(body)?.let { d ->
-            when {
-                looksLikeLinks(d) -> d
-                XrayJsonParser.looksLike(d) -> return runCatching { XrayJsonParser.parse(d) }.getOrDefault(emptyList())
-                else -> null
-            }
-        } ?: body
-        return lines.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
-            .flatMap { line ->
-                if (AmneziaParser.looksLike(line)) runCatching { AmneziaParser.parse(line) }.getOrDefault(emptyList()).asSequence()
-                else listOfNotNull(runCatching { parse(line) }.getOrNull()).asSequence()
-            }
-            .toList()
-    }
-
-    private fun looksLikeLinks(s: String) = s.lineSequence().any { line ->
-        if (AmneziaParser.looksLike(line)) return@any true
-        val scheme = line.substringBefore("://", "").lowercase()
-        scheme in supportedSchemes
-    }
+    /** All servers found in [text], in any supported format. See [Importer] for rules and nested subscriptions. */
+    fun parseMany(text: String, nameHint: String? = null): List<ProxyNode> = Importer.parse(text, nameHint).nodes
 
     fun parse(link: String): ProxyNode? {
         val scheme = link.substringBefore("://").lowercase()
@@ -269,6 +243,7 @@ object LinkExporter {
         pairs.filter { it.second.isNotBlank() }.joinToString("&") { "${it.first}=${enc(it.second)}" }
 
     fun toLink(n: ProxyNode): String = when (n.protocol) {
+        Protocol.XRAY_CONFIG -> n.rawConfig
         Protocol.VLESS, Protocol.TROJAN -> {
             val user = if (n.protocol == Protocol.VLESS) n.uuid else n.password
             val q = query(

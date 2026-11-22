@@ -8,6 +8,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -42,73 +44,128 @@ import dev.myproxy.parse.WgConfParser
 fun ServersScreen(app: AppController) {
     val state by app.state.collectAsState()
     val pings by app.pings.collectAsState()
+    val testing by app.testing.collectAsState()
     var query by remember { mutableStateOf("") }
     var collapsed by remember { mutableStateOf(setOf<String>()) }
     var editing by remember { mutableStateOf<ProxyNode?>(null) }
     var qrFor by remember { mutableStateOf<ProxyNode?>(null) }
     var configFor by remember { mutableStateOf<ProxyNode?>(null) }
     var showAdd by remember { mutableStateOf(false) }
+    var announce by remember { mutableStateOf<Subscription?>(null) }
+    val s = state.settings
+    val mask = s.maskAddresses
 
-    val groups = remember(state.nodes, state.subscriptions, query) {
+    val visibleNodes = remember(state.nodes, state.hidden, s.showHidden) { state.nodes.filter { s.showHidden || it.identity !in state.hidden } }
+    val hiddenCount = remember(state.nodes, state.hidden) { state.nodes.count { it.identity in state.hidden } }
+    val groups = remember(visibleNodes, state.subscriptions, query, s.serverSort, pings) {
         val q = query.trim().lowercase()
-        val filtered = state.nodes.filter { q.isEmpty() || it.name.lowercase().contains(q) || it.address.lowercase().contains(q) || it.protocol.title.lowercase().contains(q) }
-        val bySub = filtered.groupBy { it.subscriptionId }
+        val filtered = visibleNodes.filter { q.isEmpty() || it.name.lowercase().contains(q) || (!mask && it.address.lowercase().contains(q)) || it.protocol.title.lowercase().contains(q) }
+        val sorted = when (s.serverSort) {
+            ServerSort.MANUAL -> filtered
+            ServerSort.NAME -> filtered.sortedBy { it.name.lowercase() }
+            ServerSort.PING -> filtered.sortedBy { n -> pings[n.id]?.takeIf { it >= 0 } ?: Int.MAX_VALUE }
+            ServerSort.LAST_USED -> filtered.sortedByDescending { it.lastUsedAt }
+        }
+        val bySub = sorted.groupBy { it.subscriptionId }
         buildList {
-            state.subscriptions.forEach { s -> bySub[s.id]?.let { add(Triple(s.id, s.name, it)) } }
-            bySub[null]?.let { add(Triple("manual", "Добавленные вручную", it)) }
-            // nodes whose subscription was removed outside the app
+            state.subscriptions.sortedByDescending { it.pinned }.forEach { sub -> bySub[sub.id]?.let { add(Triple(sub.id, sub, it)) } }
+            bySub[null]?.let { add(Triple("manual", null, it)) }
             bySub.filterKeys { k -> k != null && state.subscriptions.none { it.id == k } }.values.flatten().takeIf { it.isNotEmpty() }
-                ?.let { add(Triple("orphan", "Без подписки", it)) }
+                ?.let { add(Triple("orphan", null, it)) }
         }
     }
 
     Column(Modifier.fillMaxSize()) {
-        // ------------------------------------------------ toolbar
-        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Серверы", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+        // ------------------------------------------------ header
+        Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Серверы", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.width(10.dp))
+            Badge(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
+                Text("${state.nodes.size}", Modifier.padding(horizontal = 4.dp))
+            }
+            Spacer(Modifier.weight(1f))
             OutlinedTextField(
                 query, { query = it }, singleLine = true, placeholder = { Text("Поиск") },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = { AnimatedVisibility(query.isNotEmpty(), enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) { IconButton({ query = "" }) { Icon(Icons.Rounded.Close, null) } } },
-                shape = CircleShape, modifier = Modifier.width(260.dp),
+                shape = CircleShape, modifier = Modifier.width(240.dp),
             )
             Spacer(Modifier.width(8.dp))
             TooltipIcon("Пинг всех", Icons.Rounded.NetworkPing) { app.pingAll() }
-            TooltipIcon("Сортировать по пингу", Icons.Rounded.Sort) { app.sortByPing() }
-            TooltipIcon("Импорт из буфера (Ctrl+V)", Icons.Rounded.ContentPaste) { app.importFromClipboard() }
+            TooltipIcon("Вставить (Ctrl+V)", Icons.Rounded.ContentPaste) { app.importFromClipboard() }
+            TooltipIcon("QR-код с экрана", Icons.Rounded.QrCodeScanner) { app.scanScreenQr() }
             TooltipIcon("Открыть файл…", Icons.Rounded.FileOpen) { pickFiles()?.let(app::importFiles) }
             Spacer(Modifier.width(8.dp))
             FilledTonalButton(onClick = { showAdd = true }) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("Добавить") }
+        }
+        // ------------------------------------------------ chips: sort, hidden, subscription state/links/announcements
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            var sortMenu by remember { mutableStateOf(false) }
+            Box {
+                FilterChip(sortMenu || s.serverSort != ServerSort.MANUAL, { sortMenu = true }, label = { Text(s.serverSort.title) },
+                    leadingIcon = { Icon(Icons.Rounded.Sort, null, Modifier.size(18.dp)) }, trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, null) })
+                DropdownMenu(sortMenu, { sortMenu = false }, shape = RoundedCornerShape(16.dp)) {
+                    ServerSort.entries.forEach { o ->
+                        DropdownMenuItem({ Text(o.title) }, { app.updateSettings { it.copy(serverSort = o) }; sortMenu = false },
+                            leadingIcon = { if (o == s.serverSort) Icon(Icons.Rounded.Check, null) })
+                    }
+                }
+            }
+            AnimatedVisibility(hiddenCount > 0, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
+                FilterChip(s.showHidden, { app.updateSettings { it.copy(showHidden = !it.showHidden) } },
+                    label = { Text(if (s.showHidden) "Скрытые показаны: $hiddenCount" else "Скрыто: $hiddenCount") },
+                    leadingIcon = { Icon(if (s.showHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff, null, Modifier.size(18.dp)) })
+            }
+            state.subscriptions.forEach { sub ->
+                if (sub.expired || sub.usedUp) AssistChip({}, label = { Text(if (sub.expired) "${sub.name}: истекла" else "${sub.name}: трафик исчерпан") },
+                    leadingIcon = { Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(18.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.errorContainer,
+                        labelColor = MaterialTheme.colorScheme.onErrorContainer, leadingIconContentColor = MaterialTheme.colorScheme.onErrorContainer), border = null)
+                if (sub.announce.isNotBlank()) AssistChip({ announce = sub }, label = { Text(sub.name) },
+                    leadingIcon = { Icon(Icons.Rounded.Campaign, null, Modifier.size(18.dp)) })
+                sub.links.forEach { (label, url) ->
+                    TooltipBox(TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Below), { PlainTooltip { Text("$label · $url") } }, rememberTooltipState()) {
+                        AssistChip({ dev.myproxy.core.WinUtil.openUrl(url) }, label = { Text(label) },
+                            leadingIcon = { Icon(if (label == "Поддержка") Icons.Rounded.SupportAgent else Icons.Rounded.Language, null, Modifier.size(18.dp)) })
+                    }
+                }
+            }
         }
 
         if (state.nodes.isEmpty()) {
             EmptyState(
                 Icons.Rounded.Dns, "Пока нет серверов",
-                "Вставьте ссылку (vless, vmess, trojan, ss, hy2, wireguard), ключ Amnezia vpn://, " +
-                    "перетащите .conf / .json файл в окно или добавьте подписку.",
+                "Вставьте ссылку (vless, vmess, trojan, ss, hy2, wireguard), ключ Amnezia vpn://, конфиг Clash/sing-box/Xray, " +
+                    "перетащите файл или картинку с QR в окно, или добавьте подписку.",
             ) {
-                Button(onClick = app::importFromClipboard) { Icon(Icons.Rounded.ContentPaste, null); Spacer(Modifier.width(8.dp)); Text("Вставить из буфера") }
-                OutlinedButton(onClick = { showAdd = true }) { Text("Ввести вручную") }
+                Button(onClick = app::importFromClipboard) { Icon(Icons.Rounded.ContentPaste, null); Spacer(Modifier.width(8.dp)); Text("Вставить") }
+                OutlinedButton(onClick = { app.scanScreenQr() }) { Icon(Icons.Rounded.QrCodeScanner, null); Spacer(Modifier.width(8.dp)); Text("QR с экрана") }
+                OutlinedButton(onClick = { showAdd = true }) { Text("Вручную") }
             }
             return@Column
         }
 
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            groups.forEach { (gid, title, nodes) ->
+            groups.forEach { (gid, sub, nodes) ->
                 val isCollapsed = gid in collapsed
                 item(key = "h-$gid") {
-                    GroupHeader(title, nodes.size, isCollapsed, Modifier.animateItem(),
+                    GroupHeader(sub?.name ?: if (gid == "manual") "Добавленные вручную" else "Без подписки", sub?.logoFile.orEmpty(), sub?.pinned == true,
+                        nodes.size, isCollapsed, Modifier.animateItem(),
                         onToggle = { collapsed = if (isCollapsed) collapsed - gid else collapsed + gid },
                         onPing = { app.pingAll(nodes.map { it.id }) })
                 }
                 if (!isCollapsed) items(nodes, key = { it.id }) { n ->
+                    val isHidden = n.identity in state.hidden
                     NodeRow(
-                        n, selected = n.id == state.settings.selectedNodeId, ping = pings[n.id],
-                        modifier = Modifier.animateItem(),
+                        n, selected = n.id == s.selectedNodeId, ping = pings[n.id], testing = n.id in testing, hidden = isHidden, mask = mask,
+                        modifier = Modifier.animateItem(placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec()),
                         onClick = { app.select(n) },
+                        onPing = { app.pingNode(n.id) },
                         onEdit = { editing = n }, onQr = { qrFor = n }, onConfig = { configFor = n },
-                        onCopy = { app.copyToClipboard(if (n.protocol == Protocol.WIREGUARD && n.awg.isNotEmpty()) WgConfParser.toConf(n) else LinkExporter.toLink(n), "Ссылка скопирована") },
-                        onDuplicate = { app.upsertNode(n.copy(id = java.util.UUID.randomUUID().toString(), name = n.name + " (копия)", subscriptionId = null)) },
+                        onCopy = { app.copyToClipboard(exportText(n), "Ссылка скопирована") },
+                        onDuplicate = { app.upsertNode(n.copy(id = java.util.UUID.randomUUID().toString(), name = n.name + " (копия)", subscriptionId = null, rawLink = "")) },
+                        onHide = { app.setHidden(n, !isHidden) },
                         onDelete = { app.deleteNode(n) },
                     )
                 }
@@ -116,15 +173,21 @@ fun ServersScreen(app: AppController) {
         }
     }
 
-    if (showAdd) AddLinkDialog(onDismiss = { showAdd = false }, onImport = { text -> showAdd = false; if (app.importText(text) == 0) app.notify("Не удалось распознать ссылку") },
+    if (showAdd) AddLinkDialog(onDismiss = { showAdd = false }, onImport = { text -> showAdd = false; if (app.importText(text) == 0) app.notify("Не удалось распознать") },
         onManual = { showAdd = false; editing = ProxyNode(name = "Новый сервер", protocol = Protocol.VLESS, address = "", port = 443) })
     editing?.let { n -> NodeEditorDialog(n, onDismiss = { editing = null }, onSave = { app.upsertNode(it); editing = null }) }
-    qrFor?.let { n -> QrDialog(n.name, if (n.protocol == Protocol.WIREGUARD && n.awg.isNotEmpty()) WgConfParser.toConf(n) else LinkExporter.toLink(n)) { qrFor = null } }
+    qrFor?.let { n -> QrDialog(n.name, exportText(n)) { qrFor = null } }
     configFor?.let { n ->
         val text = if (n.needsAmneziaEngine) WgConfParser.toConf(n) else XrayConfig.build(n, state.settings, state.routing)
         TextViewerDialog("Конфиг · ${n.name}", text, onCopy = { app.copyToClipboard(text) }) { configFor = null }
     }
+    announce?.let { sub ->
+        AlertDialog({ announce = null }, icon = { Icon(Icons.Rounded.Campaign, null) }, title = { Text(sub.name) },
+            text = { Text(sub.announce) }, confirmButton = { TextButton({ announce = null }) { Text("Понятно") } })
+    }
 }
+
+private fun exportText(n: ProxyNode) = if (n.protocol == Protocol.WIREGUARD && n.awg.isNotEmpty()) WgConfParser.toConf(n) else LinkExporter.toLink(n)
 
 @Composable
 fun TooltipIcon(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
@@ -135,13 +198,16 @@ fun TooltipIcon(label: String, icon: androidx.compose.ui.graphics.vector.ImageVe
 }
 
 @Composable
-private fun GroupHeader(title: String, count: Int, collapsed: Boolean, modifier: Modifier, onToggle: () -> Unit, onPing: () -> Unit) {
+private fun GroupHeader(title: String, logo: String, pinned: Boolean, count: Int, collapsed: Boolean, modifier: Modifier, onToggle: () -> Unit, onPing: () -> Unit) {
     val rot by animateFloatAsState(if (collapsed) -90f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "chev")
-    Surface(onClick = onToggle, shape = CircleShape, color = Color.Transparent, modifier = modifier.fillMaxWidth().padding(top = 10.dp)) {
+    Surface(onClick = onToggle, shape = CircleShape, color = Color.Transparent, modifier = modifier.fillMaxWidth().padding(top = 6.dp)) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.ExpandMore, null, Modifier.rotate(rot), tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(6.dp))
-            Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+            if (logo.isNotBlank()) { SubscriptionLogo(logo, 24.dp); Spacer(Modifier.width(8.dp)) }
+            FlagText(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.widthIn(max = 600.dp))
+            if (pinned) Icon(Icons.Rounded.PushPin, "Закреплена", Modifier.padding(start = 6.dp).size(16.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.weight(1f))
             Badge(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) { Text("$count") }
             IconButton(onClick = onPing) { Icon(Icons.Rounded.NetworkPing, "Пинг группы", Modifier.size(20.dp)) }
         }
@@ -150,23 +216,32 @@ private fun GroupHeader(title: String, count: Int, collapsed: Boolean, modifier:
 
 @Composable
 private fun NodeRow(
-    n: ProxyNode, selected: Boolean, ping: Int?, modifier: Modifier,
-    onClick: () -> Unit, onEdit: () -> Unit, onQr: () -> Unit, onConfig: () -> Unit, onCopy: () -> Unit, onDuplicate: () -> Unit, onDelete: () -> Unit,
+    n: ProxyNode, selected: Boolean, ping: Int?, testing: Boolean, hidden: Boolean, mask: Boolean, modifier: Modifier,
+    onClick: () -> Unit, onPing: () -> Unit, onEdit: () -> Unit, onQr: () -> Unit, onConfig: () -> Unit, onCopy: () -> Unit,
+    onDuplicate: () -> Unit, onHide: () -> Unit, onDelete: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val container by androidx.compose.animation.animateColorAsState(if (selected) cs.secondaryContainer else cs.surfaceContainerLow, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "row")
+    val container by animateColorAsState(if (selected) cs.secondaryContainer else cs.surfaceContainerLow, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "row")
     val corner by androidx.compose.animation.core.animateDpAsState(if (selected) 28.dp else 16.dp, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "corner")
+    val alpha by animateFloatAsState(if (hidden) 0.5f else 1f, label = "hidden")
     var menu by remember { mutableStateOf(false) }
     Surface(onClick = onClick, shape = RoundedCornerShape(corner), color = container,
-        border = if (selected) BorderStroke(2.dp, cs.primary) else null, modifier = modifier.fillMaxWidth()) {
+        border = if (selected) BorderStroke(2.dp, cs.primary) else null, modifier = modifier.fillMaxWidth().graphicsLayer { this.alpha = alpha }) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             ProtocolAvatar(n.protocol, selected)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(n.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-                Text("${n.endpoint} · ${n.protocol.title} · ${n.transportLabel}", style = MaterialTheme.typography.bodySmall,
-                    color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FlagText(n.name, style = MaterialTheme.typography.titleMedium, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        modifier = Modifier.weight(1f, fill = false))
+                    if (hidden) Icon(Icons.Rounded.VisibilityOff, "Скрыт", Modifier.padding(start = 6.dp).size(16.dp), tint = cs.onSurfaceVariant)
+                }
+                val extra = when {
+                    n.protocol == Protocol.XRAY_CONFIG && n.balancerMembers.isNotEmpty() -> " · балансировщик: ${n.balancerMembers.size}"
+                    n.protocol == Protocol.XRAY_CONFIG -> " · цепочка"
+                    else -> " · ${n.transportLabel}"
+                }
+                Text(n.displayEndpoint(mask) + extra, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (n.allowInsecure && n.pinnedPeerCertSha256.isBlank()) {
                 TooltipBox(TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
@@ -174,15 +249,18 @@ private fun NodeRow(
                     Icon(Icons.Rounded.GppMaybe, null, tint = cs.error, modifier = Modifier.padding(end = 8.dp))
                 }
             }
-            PingChip(ping)
+            PingChip(ping, testing)
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "Меню") }
                 DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp)) {
+                    DropdownMenuItem({ Text("Пинг") }, { menu = false; onPing() }, leadingIcon = { Icon(Icons.Rounded.NetworkPing, null) })
                     DropdownMenuItem({ Text("Изменить") }, { menu = false; onEdit() }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
                     DropdownMenuItem({ Text("QR-код") }, { menu = false; onQr() }, leadingIcon = { Icon(Icons.Rounded.QrCode2, null) })
                     DropdownMenuItem({ Text("Копировать ссылку") }, { menu = false; onCopy() }, leadingIcon = { Icon(Icons.Rounded.Link, null) })
                     DropdownMenuItem({ Text("Показать конфиг") }, { menu = false; onConfig() }, leadingIcon = { Icon(Icons.Rounded.DataObject, null) })
                     DropdownMenuItem({ Text("Дублировать") }, { menu = false; onDuplicate() }, leadingIcon = { Icon(Icons.Rounded.ContentCopy, null) })
+                    DropdownMenuItem({ Text(if (hidden) "Показать" else "Скрыть") }, { menu = false; onHide() },
+                        leadingIcon = { Icon(if (hidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff, null) })
                     HorizontalDivider()
                     DropdownMenuItem({ Text("Удалить", color = cs.error) }, { menu = false; onDelete() }, leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = cs.error) })
                 }
@@ -221,7 +299,7 @@ private fun AddLinkDialog(onDismiss: () -> Unit, onImport: (String) -> Unit, onM
         title = { Text("Добавить сервер") },
         text = {
             Column {
-                Text("Ссылки vless:// vmess:// trojan:// ss:// hy2:// wireguard://, ключ Amnezia vpn://, текст .conf WireGuard/AmneziaWG, JSON Xray или URL подписки.",
+                Text("Ссылки vless/vmess/trojan/ss/hy2/wireguard/socks/http, ключ Amnezia vpn://, .conf WireGuard/AmneziaWG, Clash/Mihomo YAML, sing-box или Xray JSON, список прокси host:port:user:pass или URL подписки.",
                     style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().heightIn(min = 140.dp), placeholder = { Text("Вставьте сюда…") },
@@ -327,6 +405,10 @@ private fun NodeEditorDialog(initial: ProxyNode, onDismiss: () -> Unit, onSave: 
                         field("Логин", n.username, Modifier.weight(1f)) { n = n.copy(username = it) }
                         field("Пароль", n.password, Modifier.weight(1f)) { n = n.copy(password = it) }
                     }
+                    Protocol.XRAY_CONFIG -> OutlinedTextField(n.rawConfig, { n = n.copy(rawConfig = it) }, label = { Text("Конфиг Xray (JSON)") },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 260.dp), textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = Mono),
+                        isError = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(n.rawConfig) }.isFailure,
+                        supportingText = { Text("Входящие подключения и статистику MyProxy добавит сам") })
                     Protocol.WIREGUARD -> {
                         field("Приватный ключ", n.wgPrivateKey, mono = true) { n = n.copy(wgPrivateKey = it.trim(), wgConfText = "") }
                         field("Публичный ключ сервера", n.wgPublicKey, mono = true) { n = n.copy(wgPublicKey = it.trim(), wgConfText = "") }
@@ -347,7 +429,7 @@ private fun NodeEditorDialog(initial: ProxyNode, onDismiss: () -> Unit, onSave: 
                         }
                     }
                 }
-                if (n.protocol !in setOf(Protocol.WIREGUARD, Protocol.HYSTERIA2, Protocol.SOCKS, Protocol.HTTP, Protocol.SHADOWSOCKS)) {
+                if (n.protocol !in setOf(Protocol.WIREGUARD, Protocol.HYSTERIA2, Protocol.SOCKS, Protocol.HTTP, Protocol.SHADOWSOCKS, Protocol.XRAY_CONFIG)) {
                     SectionTitle("Транспорт")
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Dropdown("Сеть", n.network, listOf("tcp", "ws", "grpc", "httpupgrade", "xhttp", "kcp"), modifier = Modifier.weight(1f)) { n = n.copy(network = it) }

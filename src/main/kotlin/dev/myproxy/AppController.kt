@@ -1,16 +1,12 @@
 package dev.myproxy
 
-import dev.myproxy.core.CoreManager
-import dev.myproxy.core.CoreStatus
-import dev.myproxy.core.Ping
-import dev.myproxy.core.SystemProxy
-import dev.myproxy.core.WinUtil
-import dev.myproxy.core.XrayConfig
+import dev.myproxy.core.*
 import dev.myproxy.data.*
-import dev.myproxy.parse.LinkParser
+import dev.myproxy.parse.HappRouting
+import dev.myproxy.parse.ImportResult
+import dev.myproxy.parse.Importer
 import dev.myproxy.parse.SubscriptionFetcher
 import dev.myproxy.parse.WgConfParser
-import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -18,9 +14,13 @@ import kotlinx.coroutines.sync.withLock
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
+import java.io.File
 import java.net.URLDecoder
 
 data class UiMessage(val text: String, val action: String? = null, val onAction: (() -> Unit)? = null)
+
+/** A deep-link / second-instance import waiting for the user's OK. */
+data class PendingImport(val text: String, val summary: String)
 
 const val PING_TESTING = -2
 const val PING_FAILED = -1
@@ -31,8 +31,11 @@ class AppController(private val scope: CoroutineScope) {
 
     val core = CoreManager(scope)
 
+    /** Last known delay per node id (ms, or [PING_FAILED]). Kept while a new probe runs, so the UI can strike it through. */
     private val _pings = MutableStateFlow<Map<String, Int>>(emptyMap())
     val pings: StateFlow<Map<String, Int>> = _pings.asStateFlow()
+    private val _testing = MutableStateFlow<Set<String>>(emptySet())
+    val testing: StateFlow<Set<String>> = _testing.asStateFlow()
 
     private val _updating = MutableStateFlow<Set<String>>(emptySet())
     val updatingSubs: StateFlow<Set<String>> = _updating.asStateFlow()
@@ -40,28 +43,43 @@ class AppController(private val scope: CoroutineScope) {
     private val _messages = MutableSharedFlow<UiMessage>(extraBufferCapacity = 8)
     val messages: SharedFlow<UiMessage> = _messages.asSharedFlow()
 
-    /** Set when TUN needs admin rights: the UI shows a dialog offering to restart elevated. */
+    /** The last connection failure in plain words; the UI offers its details. */
+    val lastError = MutableStateFlow<FriendlyError?>(null)
+
     val needAdmin = MutableStateFlow(false)
-    /** Set when an AmneziaWG config needs the official AmneziaWG client, which is not installed. */
     val needAmnezia = MutableStateFlow(false)
+    val pendingImport = MutableStateFlow<PendingImport?>(null)
+    val update = MutableStateFlow<UpdateInfo?>(null)
+    val updateProgress = MutableStateFlow<Float?>(null)
+    val miniWindow = MutableStateFlow(false)
 
     private val connectLock = Mutex()
-    /** Config that the running core was started with; used to tell if a reconnect is needed. */
     private var runningSignature: String? = null
+    private var pingJob: Job? = null
 
     val isConnected get() = core.status.value is CoreStatus.Running
 
     init {
-        // crash recovery: a previous run may have left the system proxy pointing at a dead port
         if (SystemProxy.isEnabledByUs) runCatching { SystemProxy.restore() }
         scope.launch {
             _state.drop(1).debounce(400).collect { s -> withContext(Dispatchers.IO) { runCatching { Storage.save(s) } } }
         }
         scope.launch { autoUpdateLoop() }
         scope.launch {
-            // the core died on its own: undo the system proxy so the user is not left offline
-            core.status.collect { st -> if (st is CoreStatus.Failed && runningSignature != null) onCoreDied() }
+            core.status.collect { st -> if (st is CoreStatus.Failed && runningSignature != null) onCoreDied(st.message) }
         }
+        // all-time traffic: accumulate in memory, flush to state every 30 s and on disconnect
+        scope.launch {
+            var pendingUp = 0L; var pendingDown = 0L; var last = System.currentTimeMillis()
+            core.traffic.collect { t ->
+                pendingUp += t.up; pendingDown += t.down
+                if ((System.currentTimeMillis() - last > 30_000 || core.status.value !is CoreStatus.Running) && (pendingUp + pendingDown) > 0) {
+                    val u = pendingUp; val d = pendingDown; pendingUp = 0; pendingDown = 0; last = System.currentTimeMillis()
+                    update { it.copy(settings = it.settings.copy(allTimeUp = it.settings.allTimeUp + u, allTimeDown = it.settings.allTimeDown + d)) }
+                }
+            }
+        }
+        if (_state.value.settings.checkUpdates) scope.launch(Dispatchers.IO) { delay(8_000); runCatching { update.value = Updater.check() } }
     }
 
     fun notify(text: String, action: String? = null, onAction: (() -> Unit)? = null) {
@@ -81,6 +99,10 @@ class AppController(private val scope: CoroutineScope) {
         if (changed && isConnected) reconnect()
     }
 
+    private fun touchLastUsed(id: String) = update { s ->
+        s.copy(nodes = s.nodes.map { if (it.id == id) it.copy(lastUsedAt = System.currentTimeMillis()) else it })
+    }
+
     // ================================================================ connection
 
     fun toggle() {
@@ -91,24 +113,25 @@ class AppController(private val scope: CoroutineScope) {
         }
     }
 
-    fun connect() = scope.launch {
-        connectLock.withLock { connectInternal() }
-    }
+    fun connect() = scope.launch { connectLock.withLock { connectInternal() } }
 
     private suspend fun connectInternal() {
         val st = _state.value
         val node = selectedNode ?: run { notify("Сначала добавьте сервер или подписку"); return }
+        val sub = st.subscriptions.firstOrNull { it.id == node.subscriptionId }
+        if (sub?.expired == true) notify("Подписка «${sub.name}» истекла — сервер может не работать")
+        lastError.value = null
         val tun = st.settings.connectMode == ConnectMode.TUN
         if (node.needsAmneziaEngine) {
-            // full AmneziaWG (padding / custom headers): only the official engine speaks it
             if (!core.amneziaInstalled) { needAmnezia.value = true; return }
             if (!WinUtil.isAdmin) { needAdmin.value = true; return }
             try {
                 core.startAmnezia(WgConfParser.toConf(node))
                 runningSignature = "awg:" + node.id
+                touchLastUsed(node.id)
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
                 runningSignature = null
-                notify("AmneziaWG: ${e.message?.lineSequence()?.first()}", "Логи") { _openLogs.tryEmit(Unit) }
+                fail(e.message ?: e.toString())
             }
             return
         }
@@ -120,6 +143,7 @@ class AppController(private val scope: CoroutineScope) {
             core.start(config, st.settings.apiPort)
             runningSignature = config
             if (!tun) SystemProxy.enable(st.settings.httpPort, st.settings.socksPort)
+            touchLastUsed(node.id)
             core.log("Подключено: ${node.name} (${st.settings.connectMode.title})")
         } catch (e: CancellationException) {
             throw e
@@ -127,14 +151,22 @@ class AppController(private val scope: CoroutineScope) {
             runningSignature = null
             runCatching { SystemProxy.restore() }
             runCatching { core.stop() }
-            val msg = e.message ?: e.toString()
-            core.log("Ошибка подключения: $msg", 'E')
-            notify("Не удалось подключиться: ${msg.lineSequence().first()}", "Логи") { _openLogs.tryEmit(Unit) }
+            fail(e.message ?: e.toString())
         }
     }
 
+    private fun fail(raw: String) {
+        val fe = Errors.explain(raw)
+        lastError.value = fe
+        core.log("Ошибка: ${fe.title}\n${fe.details}", 'E')
+        notify("${fe.title}. ${fe.hint}", "Подробнее") { lastError.value = fe; showErrorDetails.value = true }
+    }
+
+    val showErrorDetails = MutableStateFlow(false)
+
     private val _openLogs = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val openLogs: SharedFlow<Unit> = _openLogs
+    fun openLogs() { _openLogs.tryEmit(Unit) }
 
     fun disconnect() = scope.launch {
         connectLock.withLock {
@@ -152,13 +184,14 @@ class AppController(private val scope: CoroutineScope) {
         }
     }
 
-    private fun onCoreDied() {
+    private fun onCoreDied(message: String) {
         runningSignature = null
         runCatching { SystemProxy.restore() }
-        notify("Ядро остановилось, системный прокси отключён", "Логи") { _openLogs.tryEmit(Unit) }
+        val fe = Errors.explain(message)
+        lastError.value = fe
+        notify("Ядро остановилось: ${fe.title}. Системный прокси отключён", "Подробнее") { showErrorDetails.value = true }
     }
 
-    /** Called from shutdown hook / tray exit. Never leaves the system proxy enabled. */
     fun shutdown() {
         runCatching { SystemProxy.restore() }
         core.stopBlocking()
@@ -169,7 +202,7 @@ class AppController(private val scope: CoroutineScope) {
         if (!isConnected) return
         val st = _state.value
         val node = selectedNode ?: return
-        if (XrayConfig.build(node, st.settings, st.routing) != runningSignature) {
+        if (!node.needsAmneziaEngine && XrayConfig.build(node, st.settings, st.routing) != runningSignature) {
             notify("Настройки изменены", "Переподключить") { reconnect() }
         }
     }
@@ -180,11 +213,8 @@ class AppController(private val scope: CoroutineScope) {
         val before = _state.value.settings
         update { it.copy(settings = block(it.settings)) }
         val after = _state.value.settings
-        if (before.copy(selectedNodeId = null, themeMode = after.themeMode, colorSource = after.colorSource, seedColor = after.seedColor,
-                paletteStyle = after.paletteStyle, amoled = after.amoled, minimizeToTray = after.minimizeToTray,
-                autoConnect = after.autoConnect, userAgent = after.userAgent) != after.copy(selectedNodeId = null)) {
-            suggestReconnect()
-        }
+        val coreFields = { a: AppSettings -> listOf(a.connectMode, a.socksPort, a.httpPort, a.apiPort, a.allowLan, a.sniffing, a.remoteDns, a.directDns, a.mux, a.logLevel, a.tunStrictDns, a.geoSource, a.ipv6) }
+        if (coreFields(before) != coreFields(after)) suggestReconnect()
     }
 
     fun updateRouting(block: (RoutingSettings) -> RoutingSettings) {
@@ -208,7 +238,7 @@ class AppController(private val scope: CoroutineScope) {
         if (isConnected) { notify("Сначала отключитесь"); return@launch }
         runCatching { core.installCore(force = force, geo = _state.value.settings.geoSource) }
             .onSuccess { notify("Ядро обновлено: ${core.version.value ?: "?"}") }
-            .onFailure { notify("Ошибка обновления: ${it.message}") }
+            .onFailure { notify("Ошибка обновления: ${Errors.explain(it.message.orEmpty()).title}") }
     }
 
     fun updateGeo() = scope.launch {
@@ -233,48 +263,102 @@ class AppController(private val scope: CoroutineScope) {
         notify("«${node.name}» удалён", "Отменить") { _state.value = before }
     }
 
-    fun importText(text: String): Int {
-        val t = text.trim()
-        if (t.isEmpty()) return 0
-        // deep links: myproxy://add/<anything>, happ-like
-        Regex("""^[a-z0-9]+://(add|import|sub)/(.+)$""", RegexOption.IGNORE_CASE).find(t)?.let { m ->
-            if (!t.startsWith("vless") && !t.startsWith("vmess")) return importText(URLDecoder.decode(m.groupValues[2], Charsets.UTF_8))
-        }
-        if ((t.startsWith("http://") || t.startsWith("https://")) && !t.contains('\n')) {
-            addSubscription("Новая подписка", t)
-            return 1
-        }
-        val nodes = LinkParser.parseMany(t)
-        if (nodes.isNotEmpty()) {
-            update { s -> s.copy(nodes = s.nodes + nodes) }
-            if (_state.value.settings.selectedNodeId == null) update { it.copy(settings = it.settings.copy(selectedNodeId = nodes.first().id)) }
-            notify("Добавлено серверов: ${nodes.size}")
-        }
-        return nodes.size
+    fun setHidden(node: ProxyNode, hidden: Boolean) {
+        update { s -> s.copy(hidden = if (hidden) s.hidden + node.identity else s.hidden - node.identity) }
+        if (hidden) notify("«${node.name}» скрыт", "Отменить") { setHidden(node, false) }
     }
 
-    /** Drag & drop / "Open file": .conf, .json, .txt with links, Amnezia .vpn keys. */
+    // ================================================================ import
+
+    /** Imports anything; returns how many things were added. */
+    fun importText(text: String, nameHint: String? = null): Int {
+        val t = text.trim()
+        if (t.isEmpty()) return 0
+        // deep links: myproxy://add/<anything>, also the common <client>://add/ form
+        Regex("""^[a-z0-9]+://(add|import|sub|install-config)/(.+)$""", RegexOption.IGNORE_CASE).find(t)?.let { m ->
+            if (!t.startsWith("vless") && !t.startsWith("vmess")) return importText(URLDecoder.decode(m.groupValues[2], Charsets.UTF_8), nameHint)
+        }
+        if ((t.startsWith("http://") || t.startsWith("https://")) && !t.contains('\n') && !t.contains('@')) {
+            addSubscription("", t)
+            return 1
+        }
+        return applyImport(Importer.parse(t, nameHint))
+    }
+
+    private fun applyImport(r: ImportResult): Int {
+        var count = 0
+        if (r.nodes.isNotEmpty()) {
+            update { s -> s.copy(nodes = s.nodes + r.nodes) }
+            if (_state.value.settings.selectedNodeId == null) update { it.copy(settings = it.settings.copy(selectedNodeId = r.nodes.first().id)) }
+            count += r.nodes.size
+        }
+        r.nestedSubscriptions.forEach { addSubscription("", it); count++ }
+        if (r.rules.isNotEmpty()) {
+            updateRouting { it.copy(rules = it.rules + r.rules) }
+            count += r.rules.size
+        }
+        r.routingProfile?.let { p ->
+            val before = _state.value.routing
+            HappRouting.apply(p, before)?.let { nr ->
+                updateRouting { nr }
+                notify("Профиль маршрутизации применён", "Отменить") { updateRouting { before } }
+                count++
+            }
+        }
+        if (count > 0) {
+            val parts = listOfNotNull(
+                r.nodes.size.takeIf { it > 0 }?.let { "серверов: $it" },
+                r.nestedSubscriptions.size.takeIf { it > 0 }?.let { "подписок: $it" },
+                r.rules.size.takeIf { it > 0 }?.let { "правил: $it" },
+            )
+            if (parts.isNotEmpty()) notify("Добавлено — " + parts.joinToString(", "))
+        }
+        return count
+    }
+
+    /** Imports coming from outside the window (deep links, second instance) wait for confirmation. */
+    fun requestImport(text: String) {
+        val t = text.trim()
+        if (t.isEmpty()) return
+        val inner = Regex("""^[a-z0-9]+://(?:add|import|sub|install-config)/(.+)$""", RegexOption.IGNORE_CASE).find(t)
+            ?.let { URLDecoder.decode(it.groupValues[1], Charsets.UTF_8) } ?: t
+        val summary = when {
+            inner.startsWith("http") && !inner.contains('@') -> "Подписка: $inner"
+            else -> Importer.parse(inner).let { r -> "Серверов: ${r.nodes.size}" + if (r.routingProfile != null) ", профиль маршрутизации" else "" }
+        }
+        pendingImport.value = PendingImport(inner, summary)
+    }
+
     fun importFiles(files: List<File>) {
         var total = 0
         files.forEach { f ->
+            if (QrScanner.isImage(f)) {
+                val codes = QrScanner.fromFile(f)
+                if (codes.isEmpty()) notify("${f.name}: QR-код не найден") else codes.forEach { total += importText(it) }
+                return@forEach
+            }
             val text = runCatching { f.readText() }.getOrNull() ?: return@forEach
-            val nodes = runCatching { LinkParser.parseMany(text, f.nameWithoutExtension) }.getOrDefault(emptyList())
-            if (nodes.isNotEmpty()) {
-                update { s -> s.copy(nodes = s.nodes + nodes) }
-                total += nodes.size
-            } else notify("${f.name}: не распознан формат")
-        }
-        if (total > 0) {
-            if (_state.value.settings.selectedNodeId == null) update { it.copy(settings = it.settings.copy(selectedNodeId = it.nodes.firstOrNull()?.id)) }
-            notify("Импортировано серверов: $total")
+            val n = importText(text, f.nameWithoutExtension)
+            if (n == 0) notify("${f.name}: не распознан формат")
+            total += n
         }
     }
 
     fun importFromClipboard() {
-        val text = runCatching {
-            Toolkit.getDefaultToolkit().systemClipboard.getData(DataFlavor.stringFlavor) as String
-        }.getOrNull()
-        if (text.isNullOrBlank() || importText(text) == 0) notify("В буфере обмена нет ссылок или подписки")
+        val text = runCatching { Toolkit.getDefaultToolkit().systemClipboard.getData(DataFlavor.stringFlavor) as String }.getOrNull()
+        if (!text.isNullOrBlank() && importText(text) > 0) return
+        // maybe there is a screenshot of a QR code in the clipboard
+        val codes = QrScanner.fromClipboard()
+        if (codes.isNotEmpty()) { codes.forEach { importText(it) }; return }
+        notify("В буфере обмена нет ссылок, конфигов или QR-кода")
+    }
+
+    fun scanScreenQr() = scope.launch(Dispatchers.IO) {
+        val codes = QrScanner.fromScreen()
+        withContext(Dispatchers.Default) {
+            if (codes.isEmpty()) notify("На экране не найдено QR-кодов. Откройте QR и попробуйте снова")
+            else codes.forEach { importText(it) }
+        }
     }
 
     fun copyToClipboard(text: String, label: String = "Скопировано") {
@@ -284,40 +368,64 @@ class AppController(private val scope: CoroutineScope) {
 
     // ================================================================ ping
 
-    private val pingDispatcher = Dispatchers.IO.limitedParallelism(16)
+    private val tcpDispatcher = Dispatchers.IO.limitedParallelism(25)
 
+    /** Real delay through Xray when possible, TCP handshake otherwise. Previously reachable servers go first. */
     fun pingAll(ids: Collection<String>? = null) {
-        val tunRunning = isConnected && _state.value.settings.connectMode == ConnectMode.TUN
-        if (tunRunning) { notify("В режиме TUN TCP-пинг неточен — проверяется только текущий сервер"); pingCurrentReal(); return }
-        val nodes = _state.value.nodes.filter { ids == null || it.id in ids }
-        _pings.update { p -> p + nodes.associate { it.id to PING_TESTING } }
-        nodes.forEach { n ->
-            scope.launch(pingDispatcher) {
-                val ms = Ping.tcp(n)
-                _pings.update { it + (n.id to ms) }
+        val st = _state.value
+        val nodes = st.nodes.filter { (ids == null || it.id in ids) && (ids != null || st.settings.showHidden || it.identity !in st.hidden) }
+        if (nodes.isEmpty()) return
+        val prev = _pings.value
+        val ordered = nodes.sortedBy { n -> prev[n.id]?.let { if (it >= 0) it else Int.MAX_VALUE - 1 } ?: (Int.MAX_VALUE - 2) }
+        _testing.update { it + ordered.map { n -> n.id } }
+        pingJob = scope.launch(Dispatchers.IO) {
+            val useCore = core.hasCore
+            val viaCore = if (useCore) ordered.filterNot { it.needsAmneziaEngine } else emptyList()
+            val viaTcp = ordered - viaCore.toSet()
+            val best = mutableMapOf<String, Int>()
+            val pendingMembers = mutableMapOf<String, Int>()
+            launch {
+                val targets = viaCore.flatMap { n -> LatencyTester.targets(n, st.settings).also { pendingMembers[n.id] = it.size } }
+                viaCore.filter { (pendingMembers[it.id] ?: 0) == 0 }.forEach { finish(it.id, -1) }
+                LatencyTester.probe(targets, st.settings.pingUrl) { key, ms ->
+                    val id = key.substringBefore('#')
+                    synchronized(best) {
+                        // balancer: show the best reachable member
+                        val cur = best[id]
+                        best[id] = if (cur == null || cur < 0 || (ms in 0 until cur)) ms else cur
+                        pendingMembers[id] = (pendingMembers[id] ?: 1) - 1
+                        if (key.contains('#')) _pings.update { it + (id to best[id]!!) }
+                        if (pendingMembers[id]!! <= 0) finish(id, best[id]!!)
+                    }
+                }
             }
+            viaTcp.forEach { n -> launch(tcpDispatcher) { finish(n.id, Ping.tcp(n)) } }
         }
     }
+
+    private fun finish(id: String, ms: Int) {
+        _pings.update { it + (id to ms) }
+        _testing.update { it - id }
+    }
+
+    fun pingNode(id: String) = pingAll(listOf(id))
 
     fun pingCurrentReal() {
         val node = selectedNode ?: return
-        if (!isConnected) { pingAll(listOf(node.id)); return }
-        _pings.update { it + (node.id to PING_TESTING) }
+        if (!isConnected) { pingNode(node.id); return }
+        _testing.update { it + node.id }
         scope.launch(Dispatchers.IO) {
             val s = _state.value.settings
-            _pings.update { it + (node.id to Ping.throughProxy(s.httpPort, s.pingUrl)) }
+            finish(node.id, Ping.throughProxy(s.httpPort, s.pingUrl))
         }
-    }
-
-    fun sortByPing() {
-        val p = _pings.value
-        update { s -> s.copy(nodes = s.nodes.sortedBy { n -> p[n.id]?.takeIf { it >= 0 } ?: Int.MAX_VALUE }) }
     }
 
     // ================================================================ subscriptions
 
     fun addSubscription(name: String, url: String) {
-        val sub = Subscription(name = name.ifBlank { "Новая подписка" }, url = url.trim())
+        val clean = url.trim()
+        if (_state.value.subscriptions.any { it.url == clean }) { notify("Эта подписка уже добавлена"); return }
+        val sub = Subscription(name = name.ifBlank { "Новая подписка" }, url = clean)
         update { it.copy(subscriptions = it.subscriptions + sub) }
         updateSubscription(sub.id)
     }
@@ -325,6 +433,8 @@ class AppController(private val scope: CoroutineScope) {
     fun editSubscription(sub: Subscription) {
         update { s -> s.copy(subscriptions = s.subscriptions.map { if (it.id == sub.id) sub else it }) }
     }
+
+    fun togglePin(sub: Subscription) = editSubscription(sub.copy(pinned = !sub.pinned))
 
     fun deleteSubscription(sub: Subscription) {
         val before = _state.value
@@ -337,21 +447,28 @@ class AppController(private val scope: CoroutineScope) {
         if (id in _updating.value) return@launch
         _updating.update { it + id }
         try {
-            val res = SubscriptionFetcher.fetch(sub, _state.value.settings.userAgent)
+            val res = SubscriptionFetcher.fetch(sub, _state.value.settings.effectiveUserAgent)
             val selected = selectedNode
             update { s ->
                 val old = s.nodes.filter { it.subscriptionId == id }
-                // keep ids stable for servers that did not change, so selection and pings survive updates
-                val merged = res.nodes.map { n -> old.firstOrNull { it.rawLink == n.rawLink }?.let { n.copy(id = it.id) } ?: n }
+                val merged = res.nodes.map { n -> old.firstOrNull { it.identity == n.identity }?.let { n.copy(id = it.id, lastUsedAt = it.lastUsedAt) } ?: n }
                 val firstIdx = s.nodes.indexOfFirst { it.subscriptionId == id }.let { if (it < 0) s.nodes.size else it }
                 val rest = s.nodes.filterNot { it.subscriptionId == id }.toMutableList()
                 rest.addAll(firstIdx.coerceAtMost(rest.size), merged)
                 var settings = s.settings
                 if (selected != null && selected.subscriptionId == id && merged.none { it.id == selected.id }) {
-                    // the selected server disappeared: fall back to a same-named one, or the first of this subscription
                     settings = settings.copy(selectedNodeId = (merged.firstOrNull { it.name == selected.name } ?: merged.first()).id)
                 } else if (settings.selectedNodeId == null) settings = settings.copy(selectedNodeId = merged.first().id)
                 s.copy(nodes = rest, subscriptions = s.subscriptions.map { if (it.id == id) res.subscription else it }, settings = settings)
+            }
+            // panel-pushed routing: Happ-compatible profile header or rules inside a Clash/Mihomo subscription
+            if (_state.value.settings.applyPanelRouting) {
+                res.subscription.routingProfile.takeIf { it.isNotBlank() && it != sub.routingProfile }?.let { p ->
+                    HappRouting.apply(p, _state.value.routing)?.let { nr -> updateRouting { nr }; notify("«${res.subscription.name}»: применён профиль маршрутизации от сервиса") }
+                }
+                if (res.rules.isNotEmpty()) updateRouting { r ->
+                    r.copy(rules = res.rules.mapIndexed { i, rule -> rule.copy(id = "panel-$id-$i") } + r.rules.filterNot { it.id.startsWith("panel-$id-") })
+                }
             }
             if (selected?.subscriptionId == id && isConnected) suggestReconnect()
         } catch (e: CancellationException) {
@@ -391,9 +508,27 @@ class AppController(private val scope: CoroutineScope) {
         if (i < 0 || j !in r.rules.indices) r else r.copy(rules = r.rules.toMutableList().apply { add(j, removeAt(i)) })
     }
 
+    // ================================================================ misc
+
     fun relaunchAsAdmin(exit: () -> Unit) {
         needAdmin.value = false
         if (WinUtil.relaunchAsAdmin("--connect")) { shutdown(); exit() }
         else notify("Запуск от администратора отменён")
+    }
+
+    fun checkForUpdates(manual: Boolean = true) = scope.launch(Dispatchers.IO) {
+        runCatching { Updater.check() }
+            .onSuccess { u -> update.value = u; if (manual && u == null) notify("У вас последняя версия ${BuildInfo.version}") }
+            .onFailure { if (manual) notify("Не удалось проверить обновления: ${it.message}") }
+    }
+
+    fun installUpdate(exit: () -> Unit) = scope.launch(Dispatchers.IO) {
+        val u = update.value ?: return@launch
+        if (u.assetUrl == null) { WinUtil.openUrl(u.url); return@launch }
+        runCatching {
+            updateProgress.value = 0f
+            Updater.downloadAndRun(u) { updateProgress.value = it }
+        }.onSuccess { shutdown(); exit() }
+            .onFailure { updateProgress.value = null; notify("Ошибка загрузки обновления: ${it.message}") }
     }
 }
