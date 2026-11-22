@@ -347,6 +347,7 @@ export component HomePage inherits Rectangle {
         HorizontalLayout {
             padding-left: root.pad; padding-right: root.pad; padding-top: 16px; spacing: 8px; height: 56px;
             Text { text: Nav.edit-layout ? @tr("Drag widgets, pull the corner to resize") : ""; font-size: 13px; color: Theme.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
+            if !Nav.edit-layout: Button { kind: 1; glyph: "\u{e145}"; text: @tr("Add servers"); clicked => { Nav.dialog = "import"; } }
             if Nav.edit-layout: Button { kind: 3; text: @tr("Reset"); clicked => { Logic.widgets-reset(); } }
             if Nav.edit-layout: Button { kind: 1; glyph: "\u{e145}"; text: @tr("Widget"); clicked => { add-menu.show(); } }
             Button { kind: Nav.edit-layout ? 0 : 3; glyph: Nav.edit-layout ? "\u{e5ca}" : "\u{e3c9}"; text: Nav.edit-layout ? @tr("Done") : @tr("Edit"); clicked => { Nav.edit-layout = !Nav.edit-layout; } }

@@ -22,11 +22,18 @@ component WindowButton inherits Rectangle {
     ta := TouchArea { clicked => { root.clicked(); } }
 }
 
-component Logo inherits Rectangle {
-    in property <length> size: 26px;
+/** The Uplinx mark: a flat, symmetric lowercase u — the same geometry as the app icon, in the theme's colours. */
+export component Logo inherits Rectangle {
+    in property <length> size: 32px;
+    in property <brush> ink: @linear-gradient(135deg, Theme.primary 0%, Theme.tertiary 100%);
     width: size; height: size;
-    Shape { width: 100%; height: 100%; shape: Shapes.clover4; fill: Theme.primary; }
-    Text { text: "u"; font-family: "Unbounded"; font-weight: 700; font-size: root.size * 0.55; color: Theme.on-primary; y: -root.size * 0.06; }
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 512; viewbox-height: 512;
+        // filled outline of the icon's u: two round-topped stems joined by a half ring
+        commands: "M 68 92 A 68 68 0 0 1 204 92 L 204 298 A 52 52 0 0 0 308 298 L 308 92 A 68 68 0 0 1 444 92 L 444 298 A 188 188 0 0 1 68 298 Z";
+        fill: root.ink;
+    }
 }
 
 component TitleBar inherits Rectangle {
@@ -38,8 +45,7 @@ component TitleBar inherits Rectangle {
         double-clicked => { Logic.toggle-maximize(); }
     }
     HorizontalLayout {
-        padding-left: 14px; spacing: 10px; alignment: start;
-        VerticalLayout { alignment: center; Logo { } }
+        padding-left: 18px; spacing: 10px; alignment: start;
         Text { text: "Uplinx"; font-family: "Unbounded"; font-weight: 600; font-size: 13px; color: Theme.on-surface; vertical-alignment: center; }
         Rectangle {
             y: (parent.height - self.height) / 2;
@@ -128,15 +134,16 @@ export component AppWindow inherits Window {
                 background: Theme.surface-container;
                 VerticalLayout {
                     padding-top: 12px; padding-bottom: 16px; spacing: 14px;
-                    // the FAB: import anything
+                    // the logo in its container; clicking it opens Home
                     Rectangle {
                         height: 56px;
                         Rectangle {
-                            width: 56px; height: 56px; border-radius: fab.pressed ? 28px : 16px;
-                            background: fab.has-hover ? Theme.primary-container.mix(Theme.on-primary-container, 0.92) : Theme.primary-container;
+                            width: 56px; height: 56px;
+                            border-radius: logo-ta.pressed ? 28px : 18px;
+                            background: Theme.primary-container;
                             animate border-radius { duration: 200ms; easing: ease-out-back; }
-                            Icon { glyph: "\u{e145}"; font-size: 26px; color: Theme.on-primary-container; }
-                            fab := TouchArea { mouse-cursor: pointer; clicked => { Nav.dialog = "import"; } }
+                            Logo { size: 34px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; ink: Theme.on-primary-container; }
+                            logo-ta := TouchArea { mouse-cursor: pointer; clicked => { Nav.page = 0; } }
                         }
                     }
                     RailItem { glyph: "\u{e88a}"; label: @tr("Home"); selected: Nav.page == 0; clicked => { Nav.page = 0; } }
