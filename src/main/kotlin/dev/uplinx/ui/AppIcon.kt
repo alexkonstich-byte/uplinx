@@ -52,17 +52,17 @@ private fun glyphPath() = Path().apply {
     lineTo(178f, 60f)
 }
 
-// Stroke 56 → glyph spans x 50..206, y 32..224; the extrusion adds ~10/13 px down-right.
-// Shifting by half of that keeps the letter *with* its depth optically centred.
-private const val CENTER_DX = -5f
-private const val CENTER_DY = -6.5f
+// Stroke 56 → the glyph spans x 50..206 and y 32..224: centred on the 256 grid as is.
+private const val CENTER_DX = 0f
+private const val CENTER_DY = 0f
 
 /**
- * The Uplinx mark: a chunky, extruded, perfectly symmetric lowercase "u", centred on a soft M3 tile.
+ * The Uplinx mark: a flat, perfectly symmetric lowercase "u" with a primary→tertiary gradient,
+ * centred, on a transparent background (an optional M3 clover tile is kept for previews).
  * Depth comes from stacking the glyph in a deep tone; the face carries a primary→tertiary gradient
  * and a soft highlight. Drawn on a 256 grid and scaled to the canvas.
  */
-fun DrawScope.drawUplinxMark(c: MarkColors, tile: Boolean = true) {
+fun DrawScope.drawUplinxMark(c: MarkColors, tile: Boolean = false) {
     val k = size.minDimension / 256f
     scale(k, k, pivot = Offset.Zero) {
         if (tile) {
@@ -73,24 +73,13 @@ fun DrawScope.drawUplinxMark(c: MarkColors, tile: Boolean = true) {
             bun.transform(m)
             drawPath(bun, Brush.linearGradient(listOf(c.container, c.containerEdge), Offset(0f, 0f), Offset(256f, 256f)))
         }
-        val g = if (tile) 0.74f else 0.98f
+        val g = if (tile) 0.74f else 1.2f // no tile: the glyph (192 tall) fills ~90% of the frame
         scale(g, g, pivot = Offset(128f, 128f)) { translate(CENTER_DX, CENTER_DY) {
             val path = glyphPath()
             val w = 56f
             val stroke = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round)
-            // extrusion: the glyph repeated down-right in the deep tone
-            val depth = 9
-            for (i in depth downTo 1) {
-                translate(i * 1.1f, i * 1.5f) {
-                    drawPath(path, lerp(c.side, Color.Black, 0.18f * i / depth), style = stroke)
-                }
-            }
             // face
             drawPath(path, Brush.linearGradient(listOf(c.front, c.frontEnd), Offset(70f, 40f), Offset(220f, 220f)), style = stroke)
-            // glossy light from the top-left, fading out before the middle
-            drawPath(path, Brush.linearGradient(
-                0f to c.shine.copy(alpha = 0.38f), 0.42f to c.shine.copy(alpha = 0.06f), 0.6f to Color.Transparent,
-                start = Offset(60f, 30f), end = Offset(200f, 210f)), style = stroke)
         } }
     }
 }

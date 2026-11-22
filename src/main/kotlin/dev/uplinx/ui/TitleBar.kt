@@ -80,7 +80,7 @@ fun FrameWindowScope.UplinxTitleBar(app: AppController, maximizer: WindowMaximiz
             }) {
             Row(Modifier.fillMaxSize().padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 val mc = cs.markColors()
-                Canvas(Modifier.size(22.dp)) { drawUplinxMark(mc, tile = true) }
+                Canvas(Modifier.size(22.dp)) { drawUplinxMark(mc) }
                 Spacer(Modifier.width(10.dp))
                 Text("Uplinx", style = MaterialTheme.typography.titleSmall.copy(fontFamily = Unbounded, fontWeight = FontWeight.SemiBold))
                 Spacer(Modifier.width(14.dp))

@@ -31,7 +31,7 @@ object IconGen {
     private fun scheme(seed: Long, dark: Boolean) =
         dynamicColorScheme(seedColor = Color(seed), isDark = dark, isAmoled = false, style = PaletteStyle.TonalSpot)
 
-    private fun png(px: Int, seed: Long = SEED, dark: Boolean = System.getProperty("icon.light") == null): ByteArray = ImageComposeScene(px, px, Density(1f)) {
+    private fun png(px: Int, seed: Long = SEED, dark: Boolean = System.getProperty("icon.dark") != null): ByteArray = ImageComposeScene(px, px, Density(1f)) {
         val c = scheme(seed, dark).markColors()
         Canvas(Modifier.fillMaxSize()) { drawUplinxMark(c) }
     }.use { it.render().encodeToData(EncodedImageFormat.PNG)!!.bytes }

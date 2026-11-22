@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.DragData
@@ -208,16 +209,16 @@ fun AppRoot(app: AppController, onExit: () -> Unit, initial: Screen = Screen.HOM
 
 @Composable
 private fun RailLogo(status: CoreStatus) {
+    // the rail keeps its morphing, slowly turning container; the flat mark sits inside
     val on = status is CoreStatus.Running
     val morph = remember { androidx.graphics.shapes.Morph(MaterialShapes.Cookie4Sided, MaterialShapes.Cookie12Sided) }
     val p by animateFloatAsState(if (on) 1f else 0f, MaterialTheme.motionScheme.slowSpatialSpec(), label = "logo")
     val inf = rememberInfiniteTransition(label = "logoSpin")
     val rot by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(if (on) 9000 else 40000, easing = LinearEasing)), label = "lr")
     val color by animateColorAsState(if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest, label = "lc")
-    val icon by animateColorAsState(if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer, label = "li")
+    val mc = MaterialTheme.colorScheme.markColors()
     Box(Modifier.size(52.dp).background(color, MorphShape(morph, p, rot)), contentAlignment = Alignment.Center) {
-        val mc = MaterialTheme.colorScheme.markColors()
-        androidx.compose.foundation.Canvas(Modifier.size(34.dp)) { drawUplinxMark(mc, tile = false) }
+        androidx.compose.foundation.Canvas(Modifier.size(30.dp)) { drawUplinxMark(mc) }
     }
 }
 
