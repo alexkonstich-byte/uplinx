@@ -22,6 +22,8 @@ data class UiMessage(val text: String, val action: String? = null, val onAction:
 /** A deep-link / second-instance import waiting for the user's OK. */
 data class PendingImport(val text: String, val summary: String)
 
+data class IpInfo(val ip: String, val country: String, val countryCode: String, val city: String, val isp: String)
+
 const val PING_TESTING = -2
 const val PING_FAILED = -1
 /** TCP handshakes are faked by another VPN's TUN adapter: the number would be meaningless. */
@@ -73,6 +75,12 @@ class AppController(private val scope: CoroutineScope) {
         scope.launch { autoUpdateLoop() }
         scope.launch {
             core.status.collect { st -> if (st is CoreStatus.Failed && runningSignature != null) onCoreDied(st.message) }
+        }
+        // the IP widget follows connect / disconnect
+        scope.launch {
+            core.status.map { it is CoreStatus.Running }.distinctUntilChanged().collect {
+                if (_state.value.settings.homeWidgets.any { w -> w.type == WidgetType.IP }) { delay(1500); refreshIp() }
+            }
         }
         // all-time traffic: accumulate in memory, flush to state every 30 s and on disconnect
         scope.launch {
@@ -449,6 +457,38 @@ class AppController(private val scope: CoroutineScope) {
             finish(node.id, Ping.throughProxy(s.httpPort, s.pingUrl))
         }
     }
+
+    // ================================================================ public IP (dashboard widget)
+
+    val ipInfo = MutableStateFlow<IpInfo?>(null)
+    /** Off for offscreen screenshots, so a real address never ends up in docs. */
+    var ipLookupEnabled = true
+    val ipLoading = MutableStateFlow(false)
+
+    /** What the internet sees: through the local proxy when connected in proxy mode, directly otherwise. */
+    fun refreshIp() = scope.launch(Dispatchers.IO) {
+        if (ipLoading.value || !ipLookupEnabled) return@launch
+        ipLoading.value = true
+        try {
+            val s = _state.value.settings
+            val b = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(8))
+            if (isConnected && s.connectMode == ConnectMode.SYSTEM_PROXY) b.proxy(java.net.ProxySelector.of(java.net.InetSocketAddress("127.0.0.1", s.httpPort)))
+            val req = java.net.http.HttpRequest.newBuilder(java.net.URI("https://ipwho.is/")).timeout(java.time.Duration.ofSeconds(10))
+                .header("User-Agent", "Uplinx").GET().build()
+            val body = b.build().send(req, java.net.http.HttpResponse.BodyHandlers.ofString()).body()
+            val o = kotlinx.serialization.json.Json.parseToJsonElement(body).let { it as kotlinx.serialization.json.JsonObject }
+            fun str(vararg path: String): String {
+                var e: kotlinx.serialization.json.JsonElement? = o
+                path.forEach { k -> e = (e as? kotlinx.serialization.json.JsonObject)?.get(k) }
+                return (e as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+            }
+            ipInfo.value = IpInfo(str("ip"), str("country"), str("country_code"), str("city"), str("connection", "isp"))
+        } catch (e: CancellationException) { throw e } catch (_: Exception) {
+            ipInfo.value = null
+        } finally { ipLoading.value = false }
+    }
+
+    fun updateWidgets(list: List<HomeWidget>) = update { it.copy(settings = it.settings.copy(homeWidgets = list)) }
 
     // ================================================================ subscriptions
 

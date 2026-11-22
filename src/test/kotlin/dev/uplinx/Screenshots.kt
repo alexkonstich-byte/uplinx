@@ -46,6 +46,8 @@ object Screenshots {
         )
         Storage.save(state)
         val app = AppController(CoroutineScope(SupervisorJob() + Dispatchers.Default))
+        app.ipLookupEnabled = false // documentation address only (RFC 5737), never the real one
+        app.ipInfo.value = IpInfo("203.0.113.42", "Netherlands", "NL", "Amsterdam", "Nebula Hosting B.V.")
         listOf(48, 63, -1, 210, 95, 31, 540).zip(nodes).forEach { (p, n) -> setPing(app, n.id, p) }
         val hist = (0 until 60).map { i -> (40_000L + (i * 7919 % 50) * 3000) to (900_000L + ((i * 104729) % 37) * 120_000 + if (i > 40) 2_400_000 else 0) }
         app.core.previewState(CoreStatus.Running(now - 3_725_000), Traffic(up = 182_000, down = 4_350_000, totalUp = 96_000_000, totalDown = 1_840_000_000, history = hist))
@@ -63,6 +65,17 @@ object Screenshots {
                 File(out, "${screen.ordinal}-${screen.name.lowercase()}.png").writeBytes(img.encodeToData(EncodedImageFormat.PNG)!!.bytes)
             }
         }
+        // Home in widget edit mode
+        dev.uplinx.ui.HomePreview.startInEdit = true
+        ImageComposeScene(1700, 1060, Density(1.3f)) {
+            val s by app.state.collectAsState()
+            UplinxTheme(s.settings) { AppRoot(app, onExit = {}, initial = Screen.HOME) }
+        }.use { scene ->
+            var t = 0L
+            repeat(40) { scene.render(t); t += 50_000_000 }
+            File(out, "0b-home-edit.png").writeBytes(scene.render(t).encodeToData(EncodedImageFormat.PNG)!!.bytes)
+        }
+        dev.uplinx.ui.HomePreview.startInEdit = false
         println("screens written to ${out.absolutePath}")
         System.exit(0)
     }

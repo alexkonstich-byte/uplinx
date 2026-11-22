@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.uplinx"
-version = (findProperty("appVersion") as String?) ?: "1.3.1"
+version = (findProperty("appVersion") as String?) ?: "1.4.0"
 
 dependencies {
     implementation(compose.desktop.currentOs)

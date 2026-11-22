@@ -1,18 +1,25 @@
-## Uplinx 1.3.1
+## Uplinx 1.4.0 — a home screen made of widgets
 
-**Download:** `Uplinx-1.3.1-setup.exe` (installer), `Uplinx-1.3.1.msi`, or `Uplinx-1.3.1-portable-win64.zip`.
-MyProxy 1.1–1.2 and Uplinx 1.3.0 offer this update automatically. Settings move from `%APPDATA%\MyProxy` to `%APPDATA%\Uplinx` on first start.
+**Download:** `Uplinx-1.4.0-setup.exe` (installer), `Uplinx-1.4.0.msi`, or `Uplinx-1.4.0-portable-win64.zip`.
+Older versions (including MyProxy 1.1–1.2) offer this update automatically.
 
-### Fixed: every server showed 1 ms
-When another VPN runs in TUN mode (Happ, for example), its virtual adapter answers every TCP handshake itself, so a plain ping showed **1 ms for every server**.
-- Ping is now always a **real URL test through Xray**. If the core isn't downloaded yet, it is fetched first; nothing is started or routed on the system.
-- Test connections are **bound to your physical network adapter**, so another VPN's tunnel (or Uplinx's own TUN) can't fake or reroute them.
-- When a plain TCP ping can't be avoided, Uplinx detects faked handshakes and shows **TUN?** with an explanation instead of a fake 1 ms.
+### Widgets
+Press **Customize home** (top right of Home):
+- **Drag** any widget. It snaps to a 12-column grid, the target zone is outlined while you drag, and widgets in the way slide aside.
+- **Resize** by pulling the corner handle; each widget has its own minimum and maximum size.
+- **Remove** with ✕ and **add** with **+ Widget**. **Reset** brings back the default layout.
+- The layout is saved and restored on the next start.
 
-### Design
-- **Server avatars:** the flag sits like a sticker in a soft circle, and the selected server's tile blooms into a scalloped Material You shape. Servers without a flag show a globe; balancers show a hub icon.
-- **Pinned group headers** stay on top while long lists scroll, with a slim Material scrollbar.
-- Calmer background shapes in dark mode, and none of them overlap the screen title anymore.
+Available widgets:
+- **Connect button.** The spinning morphing button scales with its tile.
+- **Current server.**
+- **Modes:** system proxy / TUN, and by rules / global / direct.
+- **Speed:** live chart plus session totals.
+- **Ping:** big number for the current server; click to retest.
+- **My IP:** the address the internet sees, with country, city and ISP. It goes through the proxy when you're connected and refreshes on connect and disconnect; click to refresh.
+- **Subscription quota:** traffic and days left.
+- **Server quick switch:** the fastest servers, one click to switch.
+- **Session timer** with traffic totals.
 
-### From 1.3.0: MyProxy is now Uplinx
-New name, a new extruded **u** icon in Material You tonal colours, and `uplinx://` deep links (`myproxy://` still works). **Portable MyProxy users:** start `Uplinx.exe` once after this update; later updates restart on their own.
+### Also in this release
+Everything from 1.3.1: a real ping even behind another VPN's TUN, flag avatars, sticky group headers.

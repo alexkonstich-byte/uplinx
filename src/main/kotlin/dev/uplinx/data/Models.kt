@@ -204,6 +204,37 @@ enum class GeoSource(private val ru: String) { XRAY("Стандартные (v2f
     val title: String get() = dev.uplinx.L(ru)
 }
 
+/** Home dashboard widgets. Sizes are in grid cells (12 columns). */
+@Serializable
+enum class WidgetType(val defW: Int, val defH: Int, val minW: Int, val minH: Int, val maxW: Int, val maxH: Int) {
+    CONNECT(6, 6, 3, 3, 12, 9),
+    SERVER(5, 2, 3, 2, 12, 2),
+    MODES(6, 2, 4, 2, 12, 3),
+    SPEED(5, 3, 3, 2, 12, 5),
+    PING(2, 2, 2, 2, 4, 3),
+    IP(3, 2, 3, 2, 6, 3),
+    QUOTA(5, 2, 3, 2, 12, 3),
+    SERVERS(4, 5, 3, 3, 8, 10),
+    SESSION(3, 2, 2, 2, 6, 3),
+}
+
+@Serializable
+data class HomeWidget(
+    val id: String = UUID.randomUUID().toString(),
+    val type: WidgetType,
+    val x: Int, val y: Int, val w: Int, val h: Int,
+)
+
+fun defaultHomeWidgets() = listOf(
+    HomeWidget(type = WidgetType.CONNECT, x = 0, y = 0, w = 7, h = 6),
+    HomeWidget(type = WidgetType.SERVER, x = 7, y = 0, w = 5, h = 2),
+    HomeWidget(type = WidgetType.SPEED, x = 7, y = 2, w = 5, h = 3),
+    HomeWidget(type = WidgetType.PING, x = 7, y = 5, w = 2, h = 2),
+    HomeWidget(type = WidgetType.IP, x = 9, y = 5, w = 3, h = 2),
+    HomeWidget(type = WidgetType.MODES, x = 0, y = 6, w = 7, h = 2),
+    HomeWidget(type = WidgetType.QUOTA, x = 7, y = 7, w = 5, h = 2),
+)
+
 @Serializable
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -231,6 +262,8 @@ data class AppSettings(
     val clientSpoof: ClientSpoof = ClientSpoof.NONE,
     /** "system", "ru" or "en". English by default. */
     val language: String = "en",
+    /** Home screen layout; editable by dragging widgets in edit mode. */
+    val homeWidgets: List<HomeWidget> = defaultHomeWidgets(),
     /** Version whose "What's new" was already shown. */
     val lastSeenVersion: String = "",
     /** Random per-install device id sent as x-hwid. */

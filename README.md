@@ -12,6 +12,9 @@ It handles subscriptions, share links, Amnezia keys, WireGuard / AmneziaWG, Clas
   <img src="docs/screenshots/home-dark.png" width="49%">
 </p>
 <p>
+  <img src="docs/screenshots/home-edit.png" width="98%">
+</p>
+<p>
   <img src="docs/screenshots/servers.png" width="49%">
   <img src="docs/screenshots/routing-dark.png" width="49%">
 </p>
@@ -26,6 +29,13 @@ Get the installer (`.exe` / `.msi`) or the portable `.zip` from [Releases](https
 Java is bundled, and the installer doesn't need administrator rights. The Xray core, geo databases and wintun are downloaded on first connect.
 
 ## Features
+
+**Widget home screen.** Press *Customize home*, then:
+- drag widgets around: they snap to a grid and push others out of the way;
+- resize them by the corner;
+- add or remove them.
+
+Available widgets: connect button, current server, modes, speed chart, ping, **my IP**, subscription quota, server quick switch and session timer. The layout is saved.
 
 **Import anything.**
 - `vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`, `http(s)://`, `hy2://` / `hysteria2://`, `wireguard://` links;
