@@ -216,7 +216,8 @@ private fun RailLogo(status: CoreStatus) {
     val color by animateColorAsState(if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest, label = "lc")
     val icon by animateColorAsState(if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer, label = "li")
     Box(Modifier.size(52.dp).background(color, MorphShape(morph, p, rot)), contentAlignment = Alignment.Center) {
-        androidx.compose.foundation.Canvas(Modifier.size(28.dp)) { drawUplinxMark() }
+        val mc = MaterialTheme.colorScheme.markColors()
+        androidx.compose.foundation.Canvas(Modifier.size(34.dp)) { drawUplinxMark(mc, tile = false) }
     }
 }
 

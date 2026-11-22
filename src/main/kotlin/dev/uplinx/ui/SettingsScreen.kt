@@ -185,7 +185,8 @@ fun SettingsScreen(app: AppController) {
                 val inf = androidx.compose.animation.core.rememberInfiniteTransition(label = "about")
                 val rot by inf.animateFloat(0f, 360f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(20000, easing = androidx.compose.animation.core.LinearEasing)), label = "r")
                 Box(Modifier.size(56.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, PolygonShape(MaterialShapes.Cookie9Sided, rot)), contentAlignment = Alignment.Center) {
-                    androidx.compose.foundation.Canvas(Modifier.size(32.dp)) { drawUplinxMark() }
+                    val mc = MaterialTheme.colorScheme.markColors()
+                    androidx.compose.foundation.Canvas(Modifier.size(38.dp)) { drawUplinxMark(mc, tile = false) }
                 }
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {

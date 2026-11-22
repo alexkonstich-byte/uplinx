@@ -69,4 +69,5 @@ tasks.register<JavaExec>("icon") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass = "dev.uplinx.IconGen"
     workingDir = projectDir
+    listOf("icon.preview", "icon.seed").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
 }

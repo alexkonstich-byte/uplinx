@@ -15,6 +15,7 @@ import dev.uplinx.core.CoreStatus
 import dev.uplinx.core.WinUtil
 import dev.uplinx.ui.AppRoot
 import dev.uplinx.ui.UplinxTheme
+import dev.uplinx.ui.markColors
 import kotlinx.coroutines.*
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -76,11 +77,13 @@ fun main(args: Array<String>) {
 
         UplinxTheme(settings.settings) {
             val cs = androidx.compose.material3.MaterialTheme.colorScheme
-            val trayIcon = remember(status, cs.primary) {
+            // the icon follows the live Material You scheme
+            val markColors = cs.markColors()
+            val trayIcon = remember(status, markColors) {
                 when (status) {
-                    is CoreStatus.Running -> dev.uplinx.ui.UplinxIcon(badge = androidx.compose.ui.graphics.Color(0xFF2EC27E))
-                    is CoreStatus.Failed -> dev.uplinx.ui.UplinxIcon(badge = cs.error)
-                    else -> dev.uplinx.ui.UplinxIcon()
+                    is CoreStatus.Running -> dev.uplinx.ui.UplinxIcon(markColors, badge = androidx.compose.ui.graphics.Color(0xFF2EC27E))
+                    is CoreStatus.Failed -> dev.uplinx.ui.UplinxIcon(markColors, badge = cs.error)
+                    else -> dev.uplinx.ui.UplinxIcon(markColors)
                 }
             }
             Tray(
@@ -100,7 +103,7 @@ fun main(args: Array<String>) {
                 visible = visible,
                 state = windowState,
                 title = "Uplinx",
-                icon = remember { dev.uplinx.ui.UplinxIcon() },
+                icon = remember(markColors) { dev.uplinx.ui.UplinxIcon(markColors) },
                 onKeyEvent = { e ->
                     // Ctrl+V anywhere outside a text field imports links / configs
                     if (e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.key == Key.V) { app.importFromClipboard(); true } else false

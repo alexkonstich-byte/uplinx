@@ -4,7 +4,7 @@
 
 ### New name, new icon
 - The app is now **Uplinx**: an uplink to your server, with an X for Xray.
-- New icon: a geometric **U** in a "signal going up" gradient: electric indigo → azure → teal → neon lime. It's used in the window, the tray (with a green or red status dot), the navigation rail and the installer.
+- New icon: a chunky, extruded lowercase **u** with a tail, painted with Material You tonal roles (container tile, primary → tertiary face, deep-tone depth). The installer uses a warm amber-brown scheme; inside the app the icon (window, tray, navigation rail) recolours itself with your current theme and accent.
 - Deep links are now `uplinx://add/<link>`. Old `myproxy://` links keep working.
 
 ### Moving from MyProxy
