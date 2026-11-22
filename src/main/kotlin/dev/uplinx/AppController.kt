@@ -76,6 +76,31 @@ class AppController(private val scope: CoroutineScope) {
         scope.launch {
             core.status.collect { st -> if (st is CoreStatus.Failed && runningSignature != null) onCoreDied(st.message) }
         }
+        // while connected: ping the current server through the tunnel every 20 s (ping chart widget)
+        scope.launch(Dispatchers.IO) {
+            core.status.map { it is CoreStatus.Running }.distinctUntilChanged().collectLatest { running ->
+                if (!running) return@collectLatest
+                if (!backgroundNetwork) return@collectLatest
+                pingHistory.value = emptyList()
+                while (true) {
+                    val ms = measureThroughTunnel(_state.value.settings.pingUrl)
+                    pingHistory.update { (it + ms).takeLast(60) }
+                    selectedNode?.let { n -> if (ms >= 0) _pings.update { p -> p + (n.id to ms) } }
+                    delay(20_000)
+                }
+            }
+        }
+        // site check widget: on connect, then every minute while connected
+        scope.launch(Dispatchers.IO) {
+            core.status.map { it is CoreStatus.Running }.distinctUntilChanged().collectLatest { running ->
+                if (!running) return@collectLatest
+                delay(2_000)
+                while (backgroundNetwork) {
+                    if (_state.value.settings.homeWidgets.any { it.type == WidgetType.SITES }) checkSites().join()
+                    delay(60_000)
+                }
+            }
+        }
         // the IP widget follows connect / disconnect
         scope.launch {
             core.status.map { it is CoreStatus.Running }.distinctUntilChanged().collect {
@@ -89,7 +114,14 @@ class AppController(private val scope: CoroutineScope) {
                 pendingUp += t.up; pendingDown += t.down
                 if ((System.currentTimeMillis() - last > 30_000 || core.status.value !is CoreStatus.Running) && (pendingUp + pendingDown) > 0) {
                     val u = pendingUp; val d = pendingDown; pendingUp = 0; pendingDown = 0; last = System.currentTimeMillis()
-                    update { it.copy(settings = it.settings.copy(allTimeUp = it.settings.allTimeUp + u, allTimeDown = it.settings.allTimeDown + d)) }
+                    val day = java.time.LocalDate.now().toString()
+                    update {
+                        val st = it.settings
+                        // keep ~120 days of daily totals for the usage widget
+                        fun Map<String, Long>.add(v: Long) = (this + (day to (this[day] ?: 0L) + v)).entries.sortedBy { e -> e.key }.takeLast(120).associate { e -> e.key to e.value }
+                        it.copy(settings = st.copy(allTimeUp = st.allTimeUp + u, allTimeDown = st.allTimeDown + d,
+                            usageUp = st.usageUp.add(u), usageDown = st.usageDown.add(d)))
+                    }
                 }
             }
         }
@@ -461,13 +493,13 @@ class AppController(private val scope: CoroutineScope) {
     // ================================================================ public IP (dashboard widget)
 
     val ipInfo = MutableStateFlow<IpInfo?>(null)
-    /** Off for offscreen screenshots, so a real address never ends up in docs. */
-    var ipLookupEnabled = true
+    /** Off for offscreen screenshots: no IP lookups, tunnel pings or site checks, so nothing real ends up in docs. */
+    var backgroundNetwork = true
     val ipLoading = MutableStateFlow(false)
 
     /** What the internet sees: through the local proxy when connected in proxy mode, directly otherwise. */
     fun refreshIp() = scope.launch(Dispatchers.IO) {
-        if (ipLoading.value || !ipLookupEnabled) return@launch
+        if (ipLoading.value || !backgroundNetwork) return@launch
         ipLoading.value = true
         try {
             val s = _state.value.settings
@@ -487,6 +519,54 @@ class AppController(private val scope: CoroutineScope) {
             ipInfo.value = null
         } finally { ipLoading.value = false }
     }
+
+    // ================================================================ ping chart & site checks
+
+    /** Recent round-trips through the tunnel to the probe URL, oldest first; -1 = failed. */
+    val pingHistory = MutableStateFlow<List<Int>>(emptyList())
+
+    data class SiteResult(val ms: Int, val code: Int, val checkedAt: Long)
+    val siteResults = MutableStateFlow<Map<String, SiteResult>>(emptyMap())
+    val sitesChecking = MutableStateFlow(false)
+
+    /** A client that goes where the user's traffic goes: via the local proxy in proxy mode, plain in TUN or when off. */
+    private fun tunnelClient(): java.net.http.HttpClient {
+        val s = _state.value.settings
+        val b = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(6)).followRedirects(java.net.http.HttpClient.Redirect.NEVER)
+        if (isConnected && s.connectMode == ConnectMode.SYSTEM_PROXY) b.proxy(java.net.ProxySelector.of(java.net.InetSocketAddress("127.0.0.1", s.httpPort)))
+        return b.build()
+    }
+
+    private fun timedGet(client: java.net.http.HttpClient, url: String): Pair<Int, Int> = runCatching {
+        val req = java.net.http.HttpRequest.newBuilder(java.net.URI(url)).timeout(java.time.Duration.ofSeconds(8))
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Uplinx").GET().build()
+        val t0 = System.nanoTime()
+        val r = client.send(req, java.net.http.HttpResponse.BodyHandlers.discarding())
+        ((System.nanoTime() - t0) / 1_000_000).toInt().coerceAtLeast(1) to r.statusCode()
+    }.getOrDefault(-1 to 0)
+
+    private fun measureThroughTunnel(url: String): Int {
+        val c = tunnelClient()
+        timedGet(c, url) // warm-up: TLS handshake
+        return timedGet(c, url).first
+    }
+
+    fun checkSites() = scope.launch(Dispatchers.IO) {
+        if (sitesChecking.value) return@launch
+        sitesChecking.value = true
+        try {
+            val client = tunnelClient()
+            _state.value.settings.sites.map { site ->
+                async {
+                    val url = if (site.contains("://")) site else "https://$site"
+                    val (ms, code) = timedGet(client, url)
+                    siteResults.update { it + (site to SiteResult(ms, code, System.currentTimeMillis())) }
+                }
+            }.awaitAll()
+        } finally { sitesChecking.value = false }
+    }
+
+    fun setSites(list: List<String>) = update { it.copy(settings = it.settings.copy(sites = list.map { s -> s.trim() }.filter { s -> s.isNotEmpty() }.distinct())) }
 
     fun updateWidgets(list: List<HomeWidget>) = update { it.copy(settings = it.settings.copy(homeWidgets = list)) }
 
@@ -532,7 +612,8 @@ class AppController(private val scope: CoroutineScope) {
                 if (selected != null && selected.subscriptionId == id && merged.none { it.id == selected.id }) {
                     settings = settings.copy(selectedNodeId = (merged.firstOrNull { it.name == selected.name } ?: merged.first()).id)
                 } else if (settings.selectedNodeId == null) settings = settings.copy(selectedNodeId = merged.first().id)
-                s.copy(nodes = rest, subscriptions = s.subscriptions.map { if (it.id == id) res.subscription else it }, settings = settings)
+                val withHistory = res.subscription.copy(usageHistory = (sub.usageHistory + UsagePoint(System.currentTimeMillis(), res.subscription.upload + res.subscription.download)).takeLast(90))
+                s.copy(nodes = rest, subscriptions = s.subscriptions.map { if (it.id == id) withHistory else it }, settings = settings)
             }
             // panel-pushed routing: Happ-compatible profile header or rules inside a Clash/Mihomo subscription
             if (_state.value.settings.applyPanelRouting) {

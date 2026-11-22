@@ -89,6 +89,8 @@ private val WidgetType.title: String
         WidgetType.QUOTA -> L("Подписка")
         WidgetType.SERVERS -> L("Быстрый выбор сервера")
         WidgetType.SESSION -> L("Сессия")
+        WidgetType.SITES -> L("Доступность сайтов")
+        WidgetType.USAGE -> L("Использование интернета")
     }
 
 private val WidgetType.icon
@@ -102,6 +104,8 @@ private val WidgetType.icon
         WidgetType.QUOTA -> Icons.Rounded.DataUsage
         WidgetType.SERVERS -> Icons.Rounded.FormatListBulleted
         WidgetType.SESSION -> Icons.Rounded.Timer
+        WidgetType.SITES -> Icons.Rounded.FactCheck
+        WidgetType.USAGE -> Icons.Rounded.BarChart
     }
 
 // ======================================================================== screen
@@ -116,6 +120,7 @@ fun HomeScreen(app: AppController, onOpenServers: () -> Unit) {
     var edit by remember { mutableStateOf(HomePreview.startInEdit) }
     var picker by remember { mutableStateOf(false) }
     var ghost by remember { mutableStateOf<HomeWidget?>(null) }
+    var optionsFor by remember { mutableStateOf<HomeWidget?>(null) }
     val density = LocalDensity.current
 
     Column(Modifier.fillMaxSize()) {
@@ -161,7 +166,8 @@ fun HomeScreen(app: AppController, onOpenServers: () -> Unit) {
                             onPreview = { ghost = it },
                             onCommit = { moved -> ghost = null; app.updateWidgets(resolve(widgets, moved)) },
                             onRemove = { app.updateWidgets(widgets.filterNot { it.id == w.id }) },
-                        ) { WidgetContent(w, app, onOpenServers) }
+                            onOptions = if (w.type.hasOptions) ({ optionsFor = w }) else null,
+                        ) { WidgetContent(w, app, onOpenServers) { o -> app.updateWidgets(widgets.map { if (it.id == w.id) it.copy(opts = o) else it }) } }
                     }
                 }
                 if (widgets.isEmpty() && !edit) Box(Modifier.fillMaxWidth().height(CELL_H * 4), contentAlignment = Alignment.Center) {
@@ -171,6 +177,9 @@ fun HomeScreen(app: AppController, onOpenServers: () -> Unit) {
         }
     }
 
+    optionsFor?.let { w ->
+        WidgetOptionsDialog(w, onDismiss = { optionsFor = null }) { o -> optionsFor = null; app.updateWidgets(widgets.map { if (it.id == w.id) it.copy(opts = o) else it }) }
+    }
     if (picker) WidgetPicker(onDismiss = { picker = false }) { type ->
         picker = false
         val (x, y) = firstFree(widgets, type.defW, type.defH)
@@ -184,6 +193,7 @@ fun HomeScreen(app: AppController, onOpenServers: () -> Unit) {
 private fun WidgetFrame(
     w: HomeWidget, cellW: Dp, edit: Boolean, index: Int,
     onPreview: (HomeWidget?) -> Unit, onCommit: (HomeWidget) -> Unit, onRemove: () -> Unit,
+    onOptions: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
@@ -244,6 +254,9 @@ private fun WidgetFrame(
         AnimatedVisibility(edit, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut(), modifier = Modifier.align(Alignment.TopStart)) {
             FilledTonalIconButton(onRemove, Modifier.padding(6.dp).size(30.dp)) { Icon(Icons.Rounded.Close, L("Удалить"), Modifier.size(16.dp)) }
         }
+        if (onOptions != null) AnimatedVisibility(edit, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut(), modifier = Modifier.align(Alignment.TopEnd)) {
+            FilledTonalIconButton(onOptions, Modifier.padding(6.dp).size(30.dp)) { Icon(Icons.Rounded.Settings, L("Настройки виджета"), Modifier.size(16.dp)) }
+        }
         AnimatedVisibility(edit, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut(), modifier = Modifier.align(Alignment.BottomEnd)) {
             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.padding(6.dp).size(30.dp).pointerInput(w.id) {
@@ -297,7 +310,7 @@ private fun WidgetCard(modifier: Modifier = Modifier, color: Color = MaterialThe
 }
 
 @Composable
-private fun WidgetContent(w: HomeWidget, app: AppController, onOpenServers: () -> Unit) {
+private fun WidgetContent(w: HomeWidget, app: AppController, onOpenServers: () -> Unit, onOptions: (Map<String, String>) -> Unit) {
     val state by app.state.collectAsState()
     val status by app.core.status.collectAsState()
     val traffic by app.core.traffic.collectAsState()
@@ -325,58 +338,12 @@ private fun WidgetContent(w: HomeWidget, app: AppController, onOpenServers: () -
             node?.id?.let { pings[it] }, node?.id in testing, node?.needsAmneziaEngine == true, onClick = onOpenServers, onPing = app::pingCurrentReal)
         WidgetType.MODES -> WidgetCard { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ModeSwitchers(state.settings.connectMode, state.routing.mode, app) } }
         WidgetType.SPEED -> TrafficCard(traffic, conn == ConnState.ON)
-        WidgetType.PING -> {
-            val p = node?.id?.let { pings[it] }
-            val busy = node?.id in testing
-            val color = when { p == null || p < 0 -> MaterialTheme.colorScheme.onSurfaceVariant; p < 150 -> MaterialTheme.colorScheme.tertiary; p < 400 -> MaterialTheme.colorScheme.primary; else -> MaterialTheme.colorScheme.error }
-            WidgetCard(onClick = app::pingCurrentReal) {
-                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Speed, null, tint = color, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(L("Пинг"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.weight(1f))
-                        AnimatedVisibility(busy) { LoadingIndicator(Modifier.size(20.dp)) }
-                    }
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        RollingText(when { p == null -> "—"; p == dev.uplinx.PING_UNRELIABLE -> "?"; p < 0 -> "×"; else -> "$p" },
-                            MaterialTheme.typography.displaySmall, color)
-                        if (p != null && p >= 0) Text(L(" мс"), style = MaterialTheme.typography.titleMedium, color = color, modifier = Modifier.padding(bottom = 6.dp))
-                    }
-                }
-            }
-        }
+        WidgetType.PING -> PingWidget(app, w)
         WidgetType.IP -> IpWidget(app)
-        WidgetType.QUOTA -> if (sub != null && (sub.total > 0 || sub.expire > 0)) SubscriptionQuotaCard(sub.name, sub.upload + sub.download, sub.total, sub.expire, sub.expired || sub.usedUp)
-            else WidgetCard { Text(L("Нет данных о подписке"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.Center)) }
-        WidgetType.SERVERS -> {
-            val list = remember(state.nodes, state.hidden, pings) {
-                state.nodes.filter { it.identity !in state.hidden }.sortedBy { n -> pings[n.id]?.takeIf { it >= 0 } ?: Int.MAX_VALUE }.take(30)
-            }
-            WidgetCard {
-                Column(Modifier.fillMaxSize()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(L("Быстрый выбор"), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                        IconButton({ app.pingAll(list.map { it.id }) }, Modifier.size(32.dp)) { Icon(Icons.Rounded.NetworkPing, L("Пинг всех"), Modifier.size(18.dp)) }
-                    }
-                    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        items(list, key = { it.id }) { n ->
-                            val sel = n.id == state.settings.selectedNodeId
-                            val (flag, title) = remember(n.name) { splitLeadingFlag(n.name) }
-                            Surface(onClick = { app.select(n) }, shape = RoundedCornerShape(16.dp),
-                                color = if (sel) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, modifier = Modifier.animateItem()) {
-                                Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    NodeAvatar(flag, n.protocol, sel, Modifier.scale(0.8f))
-                                    Spacer(Modifier.width(6.dp))
-                                    FlagText(title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                    PingChip(pings[n.id], n.id in testing)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        WidgetType.QUOTA -> QuotaWidget(app, w)
+        WidgetType.SERVERS -> ServersWidget(app, w, onOptions)
+        WidgetType.SITES -> SitesWidget(app)
+        WidgetType.USAGE -> UsageWidget(app)
         WidgetType.SESSION -> {
             var now by remember { mutableStateOf(System.currentTimeMillis()) }
             LaunchedEffect(status) { while (status is CoreStatus.Running) { now = System.currentTimeMillis(); delay(1000) } }

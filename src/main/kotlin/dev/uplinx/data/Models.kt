@@ -127,6 +127,8 @@ data class Subscription(
     val routingProfile: String = "",
     /** User-Agent that got real servers from this panel (auto-detected), empty = use the global one. */
     val userAgent: String = "",
+    /** Used traffic over time, for the quota widget's chart (last 90 refreshes). */
+    val usageHistory: List<UsagePoint> = emptyList(),
 ) {
     val expired: Boolean get() = expire > 0 && expire * 1000 < System.currentTimeMillis()
     val usedUp: Boolean get() = total > 0 && upload + download >= total
@@ -216,6 +218,8 @@ enum class WidgetType(val defW: Int, val defH: Int, val minW: Int, val minH: Int
     QUOTA(5, 2, 3, 2, 12, 3),
     SERVERS(4, 5, 3, 3, 8, 10),
     SESSION(3, 2, 2, 2, 6, 3),
+    SITES(4, 4, 3, 3, 12, 10),
+    USAGE(5, 3, 3, 2, 12, 6),
 }
 
 @Serializable
@@ -223,7 +227,13 @@ data class HomeWidget(
     val id: String = UUID.randomUUID().toString(),
     val type: WidgetType,
     val x: Int, val y: Int, val w: Int, val h: Int,
+    /** Per-widget options, e.g. "chart" -> "off", "sort" -> "PING". */
+    val opts: Map<String, String> = emptyMap(),
 )
+
+/** One sample of a subscription's used traffic, recorded on every refresh. */
+@Serializable
+data class UsagePoint(val t: Long, val used: Long)
 
 fun defaultHomeWidgets() = listOf(
     HomeWidget(type = WidgetType.CONNECT, x = 0, y = 0, w = 7, h = 6),
@@ -262,6 +272,11 @@ data class AppSettings(
     val clientSpoof: ClientSpoof = ClientSpoof.NONE,
     /** "system", "ru" or "en". English by default. */
     val language: String = "en",
+    /** Sites the "site check" widget probes through the VPN. */
+    val sites: List<String> = listOf("youtube.com", "instagram.com", "chatgpt.com", "x.com", "discord.com"),
+    /** Traffic per day ("yyyy-MM-dd" → bytes) for the usage widget. */
+    val usageDown: Map<String, Long> = emptyMap(),
+    val usageUp: Map<String, Long> = emptyMap(),
     /** Home screen layout; editable by dragging widgets in edit mode. */
     val homeWidgets: List<HomeWidget> = defaultHomeWidgets(),
     /** Version whose "What's new" was already shown. */

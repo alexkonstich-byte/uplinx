@@ -1,25 +1,16 @@
-## Uplinx 1.4.0 — a home screen made of widgets
+## Uplinx 1.5.0 — more widgets, more charts
 
-**Download:** `Uplinx-1.4.0-setup.exe` (installer), `Uplinx-1.4.0.msi`, or `Uplinx-1.4.0-portable-win64.zip`.
+**Download:** `Uplinx-1.5.0-setup.exe` (installer), `Uplinx-1.5.0.msi`, or `Uplinx-1.5.0-portable-win64.zip`.
 Older versions (including MyProxy 1.1–1.2) offer this update automatically.
 
-### Widgets
-Press **Customize home** (top right of Home):
-- **Drag** any widget. It snaps to a 12-column grid, the target zone is outlined while you drag, and widgets in the way slide aside.
-- **Resize** by pulling the corner handle; each widget has its own minimum and maximum size.
-- **Remove** with ✕ and **add** with **+ Widget**. **Reset** brings back the default layout.
-- The layout is saved and restored on the next start.
+### New widgets
+- **Site check.** Add any sites (YouTube, Instagram, ChatGPT, Discord…). When you connect, and every minute after that, Uplinx opens them **through the VPN** and shows whether each one is reachable, its response time or HTTP code. Sites are added and removed right in the widget.
+- **Internet usage.** Daily bars for the last two weeks (download and upload), plus totals for today and this month. Uplinx keeps about four months of daily history.
 
-Available widgets:
-- **Connect button.** The spinning morphing button scales with its tile.
-- **Current server.**
-- **Modes:** system proxy / TUN, and by rules / global / direct.
-- **Speed:** live chart plus session totals.
-- **Ping:** big number for the current server; click to retest.
-- **My IP:** the address the internet sees, with country, city and ISP. It goes through the proxy when you're connected and refreshes on connect and disconnect; click to refresh.
-- **Subscription quota:** traffic and days left.
-- **Server quick switch:** the fastest servers, one click to switch.
-- **Session timer** with traffic totals.
+### Upgraded widgets
+- **Servers.** Every server with its ping, sorting by ping, name, recent or subscription order, ping-all, and one click to switch.
+- **Ping.** While connected, the current server is pinged through the tunnel every 20 seconds. The widget draws the chart with min / avg / max, and the chart can be turned off.
+- **Subscription.** A ring with the days left, the GB used or left, and an optional **chart of how the traffic was spent** (it builds up from subscription updates).
+- Widgets with options show a ⚙ in edit mode.
 
-### Also in this release
-Everything from 1.3.1: a real ping even behind another VPN's TUN, flag avatars, sticky group headers.
+All widgets can be dragged, resized, added and removed as in 1.4.0.

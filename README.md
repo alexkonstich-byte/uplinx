@@ -12,6 +12,9 @@ It handles subscriptions, share links, Amnezia keys, WireGuard / AmneziaWG, Clas
   <img src="docs/screenshots/home-dark.png" width="49%">
 </p>
 <p>
+  <img src="docs/screenshots/home-widgets.png" width="98%">
+</p>
+<p>
   <img src="docs/screenshots/home-edit.png" width="98%">
 </p>
 <p>
@@ -35,7 +38,18 @@ Java is bundled, and the installer doesn't need administrator rights. The Xray c
 - resize them by the corner;
 - add or remove them.
 
-Available widgets: connect button, current server, modes, speed chart, ping, **my IP**, subscription quota, server quick switch and session timer. The layout is saved.
+Available widgets:
+- **Connect button.**
+- **Servers:** every server with its ping, sorting, and one click to switch.
+- **Ping:** with a live chart through the tunnel.
+- **My IP.**
+- **Site check:** add sites and see whether they open through the VPN, and how fast.
+- **Internet usage:** daily bars for two weeks, plus today and this month.
+- **Speed chart.**
+- **Subscription:** days and GB left, with an optional chart of how the traffic was spent.
+- **Modes, current server and session timer.**
+
+Widgets with options get a ⚙ in edit mode. The layout is saved.
 
 **Import anything.**
 - `vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`, `http(s)://`, `hy2://` / `hysteria2://`, `wireguard://` links;
