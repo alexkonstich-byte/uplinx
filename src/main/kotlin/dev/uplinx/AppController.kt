@@ -24,6 +24,8 @@ data class PendingImport(val text: String, val summary: String)
 
 const val PING_TESTING = -2
 const val PING_FAILED = -1
+/** TCP handshakes are faked by another VPN's TUN adapter: the number would be meaningless. */
+const val PING_UNRELIABLE = -3
 
 class AppController(private val scope: CoroutineScope) {
     private val _state = MutableStateFlow(Storage.load())
@@ -399,6 +401,9 @@ class AppController(private val scope: CoroutineScope) {
         val ordered = nodes.sortedBy { n -> prev[n.id]?.let { if (it >= 0) it else Int.MAX_VALUE - 1 } ?: (Int.MAX_VALUE - 2) }
         _testing.update { it + ordered.map { n -> n.id } }
         pingJob = scope.launch(Dispatchers.IO) {
+            // a real URL test needs the core: fetch it (just files, nothing is started or routed)
+            if (!core.hasCore) runCatching { core.installCore(geo = st.settings.geoSource) }
+                .onFailure { notify(L("Не удалось скачать ядро для точного пинга: %1", it.message ?: "")) }
             val useCore = core.hasCore
             val viaCore = if (useCore) ordered.filterNot { it.needsAmneziaEngine } else emptyList()
             val viaTcp = ordered - viaCore.toSet()
@@ -419,7 +424,12 @@ class AppController(private val scope: CoroutineScope) {
                     }
                 }
             }
-            viaTcp.forEach { n -> launch(tcpDispatcher) { finish(n.id, Ping.tcp(n)) } }
+            if (viaTcp.isNotEmpty()) {
+                // another VPN in TUN mode answers every handshake itself: don't show fake 1 ms
+                val faked = Ping.handshakesFaked()
+                if (faked) notify(L("Другой VPN в режиме TUN подделывает TCP-соединения — простой пинг недостоверен. Отключите его или используйте пинг через ядро"))
+                viaTcp.forEach { n -> launch(tcpDispatcher) { finish(n.id, if (faked) PING_UNRELIABLE else Ping.tcp(n)) } }
+            }
         }
     }
 

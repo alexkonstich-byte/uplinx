@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.uplinx"
-version = (findProperty("appVersion") as String?) ?: "1.3.0"
+version = (findProperty("appVersion") as String?) ?: "1.3.1"
 
 dependencies {
     implementation(compose.desktop.currentOs)
@@ -70,4 +70,11 @@ tasks.register<JavaExec>("icon") {
     mainClass = "dev.uplinx.IconGen"
     workingDir = projectDir
     listOf("icon.preview", "icon.seed").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
+}
+
+tasks.register<JavaExec>("pingCheck") {
+    dependsOn("testClasses")
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass = "dev.uplinx.PingCheck"
+    listOf("uplinx.home", "ping.count").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
 }

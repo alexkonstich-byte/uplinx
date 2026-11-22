@@ -41,6 +41,8 @@ import dev.uplinx.data.ProxyNode
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.unit.em
 import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.Language
 import kotlin.math.max
 
 // ==================================================================== shapes
@@ -195,6 +197,7 @@ fun PingChip(ping: Int?, testing: Boolean = false, modifier: Modifier = Modifier
             }
             val label = when {
                 ping == null || ping == PING_TESTING -> if (testing) null else "—"
+                ping == dev.uplinx.PING_UNRELIABLE -> "TUN?"
                 ping < 0 -> L("таймаут")
                 else -> L("%1 мс", ping)
             }
@@ -289,17 +292,21 @@ fun splitLeadingFlag(text: String): Pair<String?, String> {
  */
 @Composable
 fun NodeAvatar(flagId: String?, protocol: Protocol, selected: Boolean, modifier: Modifier = Modifier) {
-    val painter = flagId?.let { flagPainter(it) }
-    if (painter == null) { ProtocolAvatar(protocol, selected, modifier); return }
     val cs = MaterialTheme.colorScheme
-    val morph = remember { Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided) }
-    val p by animateFloatAsState(if (selected) 1f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "flagMorph")
-    val ring by animateColorAsState(if (selected) cs.primary else cs.outlineVariant, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "flagRing")
-    val shape = MorphShape(morph, p, p * 20f)
-    Box(modifier.size(44.dp).clip(shape).background(ring), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(if (selected) 38.dp else 41.dp).clip(shape).background(cs.surfaceContainerHighest)) {
-            // Twemoji flags have transparent margins; scale up so the flag fills the shape
-            androidx.compose.foundation.Image(painter, null, Modifier.fillMaxSize().scale(1.75f), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+    val motion = MaterialTheme.motionScheme
+    // a calm circle; the selected server's tile blooms into a scalloped M3 shape
+    val morph = remember { Morph(MaterialShapes.Circle, MaterialShapes.Cookie12Sided) }
+    val p by animateFloatAsState(if (selected) 1f else 0f, motion.defaultSpatialSpec(), label = "avatarMorph")
+    val bg by animateColorAsState(if (selected) cs.primaryContainer else cs.surfaceContainerHighest, motion.defaultEffectsSpec(), label = "avatarBg")
+    val fg by animateColorAsState(if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant, motion.defaultEffectsSpec(), label = "avatarFg")
+    val scale by animateFloatAsState(if (selected) 1.08f else 1f, motion.fastSpatialSpec(), label = "avatarScale")
+    val painter = flagId?.let { flagPainter(it) }
+    Box(modifier.size(44.dp).scale(scale).clip(MorphShape(morph, p, p * 15f)).background(bg), contentAlignment = Alignment.Center) {
+        when {
+            // Twemoji flags are already rounded rectangles: shown whole, centred, like a sticker
+            painter != null -> androidx.compose.foundation.Image(painter, null, Modifier.size(26.dp))
+            protocol == Protocol.XRAY_CONFIG -> Icon(androidx.compose.material.icons.Icons.Rounded.Hub, null, tint = fg, modifier = Modifier.size(22.dp))
+            else -> Icon(androidx.compose.material.icons.Icons.Rounded.Language, null, tint = fg, modifier = Modifier.size(24.dp))
         }
     }
 }

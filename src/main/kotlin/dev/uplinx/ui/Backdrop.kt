@@ -46,7 +46,7 @@ fun ShapesBackdrop(screenIndex: Int, modifier: Modifier = Modifier) {
             Floater(MaterialShapes.Cookie9Sided, MaterialShapes.Cookie12Sided, 0.92f, 0.10f, 420f, 0.6f, 26f, 1.0f, Tone.PRIMARY),
             Floater(MaterialShapes.Clover8Leaf, MaterialShapes.Flower, 0.06f, 0.88f, 360f, -0.45f, 30f, 0.7f, Tone.TERTIARY, phase = 0.3f),
             Floater(MaterialShapes.SoftBurst, MaterialShapes.Sunny, 0.55f, 0.95f, 230f, 0.8f, 22f, 1.4f, Tone.SECONDARY, phase = 0.6f),
-            Floater(MaterialShapes.Pill, MaterialShapes.Gem, 0.30f, 0.06f, 150f, -1.1f, 18f, 1.8f, Tone.TERTIARY, phase = 0.15f),
+            Floater(MaterialShapes.Pill, MaterialShapes.Gem, 0.46f, 0.55f, 150f, -1.1f, 18f, 1.8f, Tone.TERTIARY, phase = 0.15f),
             Floater(MaterialShapes.Cookie4Sided, MaterialShapes.Clover4Leaf, 0.80f, 0.62f, 110f, 1.4f, 14f, 2.2f, Tone.PRIMARY, outlined = true, phase = 0.45f),
             Floater(MaterialShapes.Pentagon, MaterialShapes.Puffy, 0.18f, 0.42f, 90f, -1.6f, 16f, 2.6f, Tone.OUTLINE, outlined = true, phase = 0.8f),
             Floater(MaterialShapes.Burst, MaterialShapes.SoftBoom, 0.66f, 0.30f, 70f, 2.0f, 12f, 3.0f, Tone.SECONDARY, phase = 0.9f),
@@ -55,7 +55,7 @@ fun ShapesBackdrop(screenIndex: Int, modifier: Modifier = Modifier) {
     val morphs = remember(floaters) { floaters.map { Morph(it.from, it.to) } }
     val cs = MaterialTheme.colorScheme
     val dark = cs.surface.luminance() < 0.5f
-    val fillAlpha = if (dark) 0.28f else 0.55f
+    val fillAlpha = if (dark) 0.16f else 0.5f
     val inf = rememberInfiniteTransition(label = "backdrop")
     // one shared clock: 60 s loop
     val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(60_000, easing = LinearEasing)), label = "t")

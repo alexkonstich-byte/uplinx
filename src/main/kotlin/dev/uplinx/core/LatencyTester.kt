@@ -49,6 +49,36 @@ object LatencyTester {
         return sockets.map { it.localPort }.also { sockets.forEach { s -> s.close() } }
     }
 
+    private var physical: Pair<Long, String?>? = null
+
+    /**
+     * Friendly name of the adapter that carries the default route, skipping VPN/TUN adapters
+     * (Happ, wintun, WireGuard, TAP…). Probes are bound to it so another VPN — or our own TUN —
+     * can't fake or reroute the measurement. Cached for a minute.
+     */
+    fun physicalInterface(): String? {
+        physical?.let { (t, name) -> if (System.currentTimeMillis() - t < 60_000) return name }
+        val ps = "Get-NetRoute -DestinationPrefix 0.0.0.0/0 -ErrorAction SilentlyContinue | Sort-Object RouteMetric | " +
+            "ForEach-Object { Get-NetAdapter -InterfaceIndex \$_.ifIndex -ErrorAction SilentlyContinue } | " +
+            "Where-Object { \$_.Status -eq 'Up' -and \$_.InterfaceDescription -notmatch 'tun|tunnel|wintun|wireguard|tap|vpn|virtual' -and \$_.Name -notmatch 'tun|vpn|xray|happ|uplinx' } | " +
+            "Select-Object -First 1 -ExpandProperty Name"
+        val name = runCatching {
+            val p = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command", ps).redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText().trim().lineSequence().lastOrNull()?.trim()
+            p.waitFor()
+            out?.takeIf { it.isNotBlank() && !it.contains("Exception") }
+        }.getOrNull()
+        physical = System.currentTimeMillis() to name
+        return name
+    }
+
+    private fun bind(outbound: JsonObject, iface: String?): JsonObject {
+        if (iface == null) return outbound
+        val stream = (outbound["streamSettings"] as? JsonObject) ?: JsonObject(emptyMap())
+        val sockopt = (stream["sockopt"] as? JsonObject) ?: JsonObject(emptyMap())
+        return JsonObject(outbound + ("streamSettings" to JsonObject(stream + ("sockopt" to JsonObject(sockopt + ("interface" to JsonPrimitive(iface)))))))
+    }
+
     /** Parallelism like Chumpy: 10, or 25 for long lists. */
     fun concurrencyFor(n: Int) = if (n > 45) 25 else 10
 
@@ -58,6 +88,7 @@ object LatencyTester {
     suspend fun probe(targets: List<Target>, url: String, onResult: (String, Int) -> Unit) = coroutineScope {
         if (!Paths.xrayExe.exists() || targets.isEmpty()) return@coroutineScope
         val sem = Semaphore(concurrencyFor(targets.size))
+        val iface = physicalInterface()
         targets.chunked(120).forEach { chunk ->
             val ports = freePorts(chunk.size)
             val cfg = buildJsonObject {
@@ -68,7 +99,7 @@ object LatencyTester {
                     }
                 }
                 putJsonArray("outbounds") {
-                    chunk.forEachIndexed { i, t -> add(JsonObject(t.outbound + ("tag" to JsonPrimitive("out$i")))) }
+                    chunk.forEachIndexed { i, t -> add(bind(JsonObject(t.outbound + ("tag" to JsonPrimitive("out$i"))), iface)) }
                 }
                 putJsonObject("routing") {
                     putJsonArray("rules") {

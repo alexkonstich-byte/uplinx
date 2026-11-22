@@ -126,6 +126,9 @@ private val EN: Map<String, String> = mapOf(
     "В релизе нет установщика" to "The release has no installer",
     "В подписке не найдено поддерживаемых серверов" to "No supported servers found in the subscription",
     "Русский" to "Русский",
+    "Не удалось скачать ядро для точного пинга: %1" to "Couldn't download the core for an accurate ping: %1",
+    "Другой VPN в режиме TUN подделывает TCP-соединения — простой пинг недостоверен. Отключите его или используйте пинг через ядро" to
+        "Another VPN in TUN mode fakes TCP connections, so a plain ping is meaningless. Turn it off or use the core ping",
     "Сейчас установлена %1 · обновление из GitHub Releases%2" to "Installed: %1 · updates from GitHub Releases%2",
     " (портативная версия)" to " (portable)",
     "Описание изменений не указано" to "No release notes",

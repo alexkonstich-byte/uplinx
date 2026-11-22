@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package dev.uplinx.ui
 
@@ -148,10 +148,13 @@ fun ServersScreen(app: AppController) {
             return@Column
         }
 
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        Box(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = 24.dp, end = 32.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             groups.forEach { (gid, sub, nodes) ->
                 val isCollapsed = gid in collapsed
-                item(key = "h-$gid") {
+                // group headers stay pinned while their servers scroll under them
+                stickyHeader(key = "h-$gid") {
                     GroupHeader(sub?.name ?: if (gid == "manual") L("Добавленные вручную") else L("Без подписки"), sub?.logoFile.orEmpty(), sub?.pinned == true,
                         nodes.size, isCollapsed, Modifier.animateItem(),
                         onToggle = { collapsed = if (isCollapsed) collapsed - gid else collapsed + gid },
@@ -172,6 +175,14 @@ fun ServersScreen(app: AppController) {
                     )
                 }
             }
+        }
+        androidx.compose.foundation.VerticalScrollbar(
+            androidx.compose.foundation.rememberScrollbarAdapter(listState),
+            Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = 8.dp, top = 4.dp, bottom = 12.dp),
+            style = androidx.compose.foundation.ScrollbarStyle(
+                minimalHeight = 48.dp, thickness = 8.dp, shape = RoundedCornerShape(4.dp), hoverDurationMillis = 250,
+                unhoverColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), hoverColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)),
+        )
         }
     }
 
@@ -202,7 +213,7 @@ fun TooltipIcon(label: String, icon: androidx.compose.ui.graphics.vector.ImageVe
 @Composable
 private fun GroupHeader(title: String, logo: String, pinned: Boolean, count: Int, collapsed: Boolean, modifier: Modifier, onToggle: () -> Unit, onPing: () -> Unit) {
     val rot by animateFloatAsState(if (collapsed) -90f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "chev")
-    Surface(onClick = onToggle, shape = CircleShape, color = Color.Transparent, modifier = modifier.fillMaxWidth().padding(top = 6.dp)) {
+    Surface(onClick = onToggle, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f), modifier = modifier.fillMaxWidth().padding(top = 6.dp)) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.ExpandMore, null, Modifier.rotate(rot), tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(6.dp))

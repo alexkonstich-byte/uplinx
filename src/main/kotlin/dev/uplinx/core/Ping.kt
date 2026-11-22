@@ -11,6 +11,15 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 object Ping {
+    /**
+     * True when connecting to an address that cannot exist (TEST-NET-1, RFC 5737) still "succeeds":
+     * a TUN adapter of another VPN is completing handshakes locally, so TCP ping numbers are fake.
+     */
+    fun handshakesFaked(): Boolean = runCatching {
+        Socket().use { it.connect(InetSocketAddress("192.0.2.1", 443), 800) }
+        true
+    }.getOrDefault(false)
+
     /** TCP handshake time to the server, ms. -1 = timeout/unreachable. Does not touch any proxy settings. */
     fun tcp(node: ProxyNode, timeoutMs: Int = 3000): Int = runCatching {
         Socket().use { s ->
