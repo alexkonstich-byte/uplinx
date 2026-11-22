@@ -161,11 +161,11 @@ export component AppWindow inherits Window {
     in property <int> status;        // 0 off, 1 busy, 2 on
     in property <string> server-name;
     in property <string> server-detail;
-    in property <bool> maximized;
+    in property <bool> is-maximized;
     in-out property <int> page: 0;
 
     VerticalLayout {
-        TitleBar { connected: root.status == 2; server: root.server-name; maximized: root.maximized; }
+        TitleBar { connected: root.status == 2; server: root.server-name; maximized: root.is-maximized; }
         HorizontalLayout {
             // navigation rail
             Rectangle {

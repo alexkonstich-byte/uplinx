@@ -1,57 +1,37 @@
-//! Reads the same state.json the Kotlin version writes (%APPDATA%\Uplinx), so the port is a drop-in.
+//! Storage: %APPDATA%\Uplinx\state.json, shared format with the Kotlin version. Atomic writes.
 
-use serde::Deserialize;
+use crate::model::AppState;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Node {
-    pub id: String,
-    pub name: String,
-    pub protocol: String,
-    pub address: String,
-    pub port: u16,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Settings {
-    pub theme_mode: String,
-    pub color_source: String,
-    pub seed_color: i64,
-    pub selected_node_id: Option<String>,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self { theme_mode: "SYSTEM".into(), color_source: "WINDOWS_ACCENT".into(), seed_color: 0xFF1F8BFF, selected_node_id: None }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
-pub struct AppState {
-    pub settings: Settings,
-    pub nodes: Vec<Node>,
-}
-
-impl AppState {
-    pub fn selected_node(&self) -> Option<&Node> {
-        self.settings.selected_node_id.as_ref()
-            .and_then(|id| self.nodes.iter().find(|n| &n.id == id))
-            .or_else(|| self.nodes.first())
-    }
-}
-
 pub fn home() -> PathBuf {
-    if let Ok(h) = std::env::var("UPLINX_HOME") { return PathBuf::from(h); }
-    let base = std::env::var("APPDATA").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."));
-    base.join("Uplinx")
+    let h = std::env::var("UPLINX_HOME").map(PathBuf::from).unwrap_or_else(|_| {
+        let base = std::env::var("APPDATA").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."));
+        let home = base.join("Uplinx");
+        let legacy = base.join("MyProxy");
+        if !home.exists() && legacy.is_dir() { let _ = std::fs::rename(&legacy, &home); }
+        home
+    });
+    let _ = std::fs::create_dir_all(&h);
+    h
 }
+
+pub fn core_dir() -> PathBuf { let d = home().join("core"); let _ = std::fs::create_dir_all(&d); d }
 
 pub fn load() -> AppState {
-    std::fs::read_to_string(home().join("state.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    let path = home().join("state.json");
+    match std::fs::read_to_string(&path) {
+        Ok(text) => serde_json::from_str(&text).unwrap_or_else(|_| {
+            // keep a broken file for the user instead of silently losing it
+            let _ = std::fs::copy(&path, home().join("state.broken.json"));
+            AppState::default()
+        }),
+        Err(_) => AppState::default(),
+    }
+}
+
+pub fn save(st: &AppState) {
+    let tmp = home().join("state.json.tmp");
+    if let Ok(text) = serde_json::to_string_pretty(st) {
+        if std::fs::write(&tmp, text).is_ok() { let _ = std::fs::rename(&tmp, home().join("state.json")); }
+    }
 }

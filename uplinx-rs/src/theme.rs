@@ -1,6 +1,6 @@
 //! Material You colours: seed from the Windows accent (or the user's seed), scheme by material-colors.
 
-use crate::{state::AppState, AppWindow, Theme};
+use crate::{model::AppState, AppWindow, Theme};
 use material_colors::{color::Rgb, theme::ThemeBuilder};
 use slint::{Color, ComponentHandle};
 use winreg::{enums::HKEY_CURRENT_USER, RegKey};

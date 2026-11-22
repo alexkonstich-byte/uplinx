@@ -1,8 +1,13 @@
 // Uplinx Client — Rust/Slint port (phase 1: shell, theme, state).
 #![windows_subsystem = "windows"]
 
+mod core;
+mod model;
+mod parse;
 mod state;
 mod theme;
+#[cfg(test)]
+mod tests;
 
 use slint::ComponentHandle;
 
@@ -15,7 +20,7 @@ fn main() -> anyhow::Result<()> {
     theme::apply(&app, &st);
     if let Some(node) = st.selected_node() {
         app.set_server_name(node.name.clone().into());
-        app.set_server_detail(format!("{}:{} · {}", node.address, node.port, node.protocol).into());
+        app.set_server_detail(format!("{}:{} · {}", node.address, node.port, node.protocol_title()).into());
     } else {
         app.set_server_name("No server yet".into());
     }
@@ -43,7 +48,7 @@ fn main() -> anyhow::Result<()> {
             if let Some(app) = weak.upgrade() {
                 let m = !app.window().is_maximized();
                 app.window().set_maximized(m);
-                app.set_maximized(m);
+                app.set_is_maximized(m);
             }
         });
     }
