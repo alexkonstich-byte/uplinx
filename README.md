@@ -1,4 +1,6 @@
-# MyProxy
+# Uplinx
+
+<img src="packaging/uplinx-512.png" width="96" align="right">
 
 **English** · [Русский](README.ru.md)
 
@@ -20,7 +22,7 @@ It handles subscriptions, share links, Amnezia keys, WireGuard / AmneziaWG, Clas
 
 ## Download
 
-Get the installer (`.exe` / `.msi`) or the portable `.zip` from [Releases](https://github.com/alexkonstich-byte/myproxy/releases/latest).
+Get the installer (`.exe` / `.msi`) or the portable `.zip` from [Releases](https://github.com/alexkonstich-byte/uplinx/releases/latest).
 Java is bundled, and the installer doesn't need administrator rights. The Xray core, geo databases and wintun are downloaded on first connect.
 
 ## Features
@@ -34,12 +36,12 @@ Java is bundled, and the installer doesn't need administrator rights. The Xray c
 - `host:port:user:pass` proxy lists, nested subscriptions, Happ-compatible routing profiles;
 - base64 or plain subscriptions.
 
-You can import with Ctrl+V anywhere, drag & drop, *Open file…*, **a QR code on screen** or in an image, or a `myproxy://add/<link>` deep link (asks for confirmation).
+You can import with Ctrl+V anywhere, drag & drop, *Open file…*, **a QR code on screen** or in an image, or a `uplinx://add/<link>` deep link (asks for confirmation).
 
 **Subscriptions.**
 - Reads `subscription-userinfo` (traffic and expiry), `profile-title`, `profile-update-interval`, `profile-logo`, `support-url`, `announce` and the `routing` profile.
 - Updates automatically, pins, and flags expired or used-up subscriptions.
-- If a panel answers *"App not supported"*, MyProxy retries as another client (Happ, v2rayN, sing-box, Clash), remembers the one that worked, and sends device headers (`x-hwid`…) for panels with device limits.
+- If a panel answers *"App not supported"*, Uplinx retries as another client (Happ, v2rayN, sing-box, Clash), remembers the one that worked, and sends device headers (`x-hwid`…) for panels with device limits.
 
 **Modes.**
 - *System proxy* (WinINet). The previous proxy settings are saved and restored, even after a crash.

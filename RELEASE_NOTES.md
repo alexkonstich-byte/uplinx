@@ -1,10 +1,16 @@
-## MyProxy 1.2.1
+## Uplinx 1.3.0 — MyProxy is now Uplinx
 
-**Download:** `MyProxy-1.2.1-setup.exe` (installer), `MyProxy-1.2.1.msi`, or `MyProxy-1.2.1-portable-win64.zip`. Existing installs will offer the update automatically.
+**Download:** `Uplinx-1.3.0-setup.exe` (installer), `Uplinx-1.3.0.msi`, or `Uplinx-1.3.0-portable-win64.zip`.
 
-- **New fonts:** **Unbounded** for headlines and **Rubik** for text. Both are expressive, rounded, and cover Latin and Cyrillic.
-- **English by default** for new installs. Russian is still one click away in *Settings → Appearance → Language*.
-- Dates follow the UI language.
-- Shorter *Subs* label in the navigation rail.
-- English README (Russian moved to `README.ru.md`).
-- CI updated to Node 24 actions.
+### New name, new icon
+- The app is now **Uplinx**: an uplink to your server, with an X for Xray.
+- New icon: a geometric **U** in a "signal going up" gradient: electric indigo → azure → teal → neon lime. It's used in the window, the tray (with a green or red status dot), the navigation rail and the installer.
+- Deep links are now `uplinx://add/<link>`. Old `myproxy://` links keep working.
+
+### Moving from MyProxy
+- Your servers, subscriptions and settings move automatically from `%APPDATA%\MyProxy` to `%APPDATA%\Uplinx` on first start.
+- The old "start with Windows" entry is replaced with the new one.
+- **Portable MyProxy users:** the update unpacks fine, but the old updater tries to restart `MyProxy.exe`, which no longer exists. Start `Uplinx.exe` from the same folder once; later updates restart on their own.
+
+### Also
+- The whole code base, packages and build use the new name.

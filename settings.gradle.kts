@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "myproxy"
+rootProject.name = "uplinx"

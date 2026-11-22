@@ -7,8 +7,8 @@ plugins {
     id("org.jetbrains.compose") version "1.12.2"
 }
 
-group = "dev.myproxy"
-version = (findProperty("appVersion") as String?) ?: "1.2.1"
+group = "dev.uplinx"
+version = (findProperty("appVersion") as String?) ?: "1.3.0"
 
 dependencies {
     implementation(compose.desktop.currentOs)
@@ -35,16 +35,17 @@ tasks.test {
 
 compose.desktop {
     application {
-        mainClass = "dev.myproxy.MainKt"
-        jvmArgs += listOf("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Dmyproxy.version=${project.version}")
+        mainClass = "dev.uplinx.MainKt"
+        jvmArgs += listOf("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Duplinx.version=${project.version}")
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
-            packageName = "MyProxy"
+            packageName = "Uplinx"
             packageVersion = project.version.toString()
             description = "Material You proxy client powered by Xray"
             modules("java.instrument", "java.net.http", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "jdk.charsets", "jdk.localedata")
             windows {
-                menuGroup = "MyProxy"
+                menuGroup = "Uplinx"
+                iconFile.set(project.file("packaging/uplinx.ico"))
                 shortcut = true
                 dirChooser = true
                 perUserInstall = true
@@ -58,6 +59,14 @@ compose.desktop {
 tasks.register<JavaExec>("screenshots") {
     dependsOn("testClasses")
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass = "dev.myproxy.Screenshots"
-    listOf("myproxy.home", "shots.out", "shots.dark", "shots.seed", "shots.lang").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
+    mainClass = "dev.uplinx.Screenshots"
+    listOf("uplinx.home", "shots.out", "shots.dark", "shots.seed", "shots.lang").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
+}
+
+// Regenerates packaging/uplinx.ico, packaging/uplinx-512.png and the in-app icon from AppIcon.kt.
+tasks.register<JavaExec>("icon") {
+    dependsOn("testClasses")
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass = "dev.uplinx.IconGen"
+    workingDir = projectDir
 }
