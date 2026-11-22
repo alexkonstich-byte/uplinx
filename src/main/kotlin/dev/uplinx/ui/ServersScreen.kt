@@ -54,6 +54,7 @@ fun ServersScreen(app: AppController) {
     var configFor by remember { mutableStateOf<ProxyNode?>(null) }
     var showAdd by remember { mutableStateOf(false) }
     var announce by remember { mutableStateOf<Subscription?>(null) }
+    var speedFor by remember { mutableStateOf<ProxyNode?>(null) }
     val s = state.settings
     val mask = s.maskAddresses
 
@@ -167,6 +168,7 @@ fun ServersScreen(app: AppController) {
                         modifier = Modifier.animateItem(placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec()),
                         onClick = { app.select(n) },
                         onPing = { app.pingNode(n.id) },
+                        onSpeed = { speedFor = n; app.runSpeedTest(n) },
                         onEdit = { editing = n }, onQr = { qrFor = n }, onConfig = { configFor = n },
                         onCopy = { app.copyToClipboard(exportText(n), L("Ссылка скопирована")) },
                         onDuplicate = { app.upsertNode(n.copy(id = java.util.UUID.randomUUID().toString(), name = n.name + L(" (копия)"), subscriptionId = null, rawLink = "")) },
@@ -193,6 +195,11 @@ fun ServersScreen(app: AppController) {
     configFor?.let { n ->
         val text = if (n.needsAmneziaEngine) WgConfParser.toConf(n) else XrayConfig.build(n, state.settings, state.routing)
         TextViewerDialog(L("Конфиг · %1", n.name), text, onCopy = { app.copyToClipboard(text) }) { configFor = null }
+    }
+    speedFor?.let { n ->
+        AlertDialog({ speedFor = null }, title = { FlagText(n.name, style = MaterialTheme.typography.titleLarge) },
+            text = { Box(Modifier.size(380.dp, 400.dp)) { SpeedTestWidget(app, n) } },
+            confirmButton = { TextButton({ speedFor = null }) { Text(L("Закрыть")) } })
     }
     announce?.let { sub ->
         AlertDialog({ announce = null }, icon = { Icon(Icons.Rounded.Campaign, null) }, title = { Text(sub.name) },
@@ -230,7 +237,7 @@ private fun GroupHeader(title: String, logo: String, pinned: Boolean, count: Int
 @Composable
 private fun NodeRow(
     n: ProxyNode, selected: Boolean, ping: Int?, testing: Boolean, hidden: Boolean, mask: Boolean, modifier: Modifier,
-    onClick: () -> Unit, onPing: () -> Unit, onEdit: () -> Unit, onQr: () -> Unit, onConfig: () -> Unit, onCopy: () -> Unit,
+    onClick: () -> Unit, onPing: () -> Unit, onSpeed: () -> Unit, onEdit: () -> Unit, onQr: () -> Unit, onConfig: () -> Unit, onCopy: () -> Unit,
     onDuplicate: () -> Unit, onHide: () -> Unit, onDelete: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -268,6 +275,7 @@ private fun NodeRow(
                 IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, L("Меню")) }
                 DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp)) {
                     DropdownMenuItem({ Text(L("Пинг")) }, { menu = false; onPing() }, leadingIcon = { Icon(Icons.Rounded.NetworkPing, null) })
+                    DropdownMenuItem({ Text(L("Тест скорости")) }, { menu = false; onSpeed() }, leadingIcon = { Icon(Icons.Rounded.Speed, null) })
                     DropdownMenuItem({ Text(L("Изменить")) }, { menu = false; onEdit() }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
                     DropdownMenuItem({ Text(L("QR-код")) }, { menu = false; onQr() }, leadingIcon = { Icon(Icons.Rounded.QrCode2, null) })
                     DropdownMenuItem({ Text(L("Копировать ссылку")) }, { menu = false; onCopy() }, leadingIcon = { Icon(Icons.Rounded.Link, null) })

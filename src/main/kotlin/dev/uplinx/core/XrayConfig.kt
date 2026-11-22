@@ -9,6 +9,7 @@ import dev.uplinx.data.RouteAction
 import dev.uplinx.data.RoutingMode
 import dev.uplinx.data.RoutingSettings
 import dev.uplinx.data.RuleKind
+import dev.uplinx.data.SplitMode
 import kotlinx.serialization.json.*
 
 /** Turns the app state into an Xray JSON config. Pure: no IO, so it is unit-testable. */
@@ -344,6 +345,18 @@ object XrayConfig {
         putJsonArray("rules") {
             if (s.connectMode == ConnectMode.TUN) {
                 add(rule("dns-out") { putJsonArray("inboundTag") { add("tun") }; put("port", "53") })
+            }
+            // per-app split tunnelling comes before everything else (except DNS plumbing)
+            val split = s.split
+            if (split.enabled && split.apps.isNotEmpty() && r.mode != RoutingMode.DIRECT) {
+                when (split.mode) {
+                    SplitMode.EXCLUDE -> add(rule("direct") { putJsonArray("process") { split.apps.forEach { add(it) } } })
+                    SplitMode.INCLUDE -> {
+                        add(rule("proxy") { putJsonArray("process") { split.apps.forEach { add(it) } } })
+                        // our own core and system services keep working, everything else goes direct
+                        add(rule("direct") { put("network", "tcp,udp") })
+                    }
+                }
             }
             // the directDns resolver itself must never go through the proxy
             if (r.mode == RoutingMode.RULE && r.bypassRu) {

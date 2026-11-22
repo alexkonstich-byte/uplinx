@@ -135,6 +135,11 @@ class ParserTest {
         nodes.forEach { (name, n) ->
             routings.forEach { (rn, r) -> java.io.File(dir, "$name-$rn.json").writeText(XrayConfig.build(n, AppSettings(mux = true), r)) }
         }
+        // split tunnelling, both modes
+        SplitMode.entries.forEach { m ->
+            val st = AppSettings(split = SplitTunnel(enabled = true, mode = m, apps = listOf("chrome.exe", "Telegram.exe")))
+            java.io.File(dir, "split-${m.name.lowercase()}.json").writeText(XrayConfig.build(nodes.getValue("vless-reality"), st, RoutingSettings()))
+        }
     }
 
     @Test fun configNeverContainsRemovedAllowInsecure() {

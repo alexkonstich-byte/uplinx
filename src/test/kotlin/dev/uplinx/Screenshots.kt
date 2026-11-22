@@ -36,7 +36,8 @@ object Screenshots {
         )
         val state = AppState(
             settings = AppSettings(selectedNodeId = nodes[0].id, colorSource = ColorSource.CUSTOM, seedColor = (System.getProperty("shots.seed") ?: "FF1F8BFF").toLong(16),
-                themeMode = if (System.getProperty("shots.dark") == "1") ThemeMode.DARK else ThemeMode.LIGHT, language = System.getProperty("shots.lang") ?: "ru"),
+                themeMode = if (System.getProperty("shots.dark") == "1") ThemeMode.DARK else ThemeMode.LIGHT, language = System.getProperty("shots.lang") ?: "ru",
+                split = SplitTunnel(enabled = true, mode = SplitMode.INCLUDE, apps = listOf("chrome.exe", "Discord.exe", "Telegram.exe"))),
             routing = RoutingSettings(rules = listOf(
                 RouteRule(kind = RuleKind.PROCESS, value = "telegram.exe, discord.exe", action = RouteAction.PROXY),
                 RouteRule(kind = RuleKind.DOMAIN, value = "gosuslugi.ru, sberbank.ru", action = RouteAction.DIRECT),
@@ -82,6 +83,8 @@ object Screenshots {
         app.updateSettings { st -> st.copy(
             usageDown = (0..13).associate { today.minusDays(it.toLong()).toString() to (800_000_000L + (it * 7919L % 13) * 260_000_000L) },
             usageUp = (0..13).associate { today.minusDays(it.toLong()).toString() to (60_000_000L + (it * 104729L % 7) * 30_000_000L) },
+            speedResults = listOf(SpeedResult(nodes[0].id, nodes[0].name, 287.4, 94.2, 48, now)),
+            split = SplitTunnel(enabled = true, mode = SplitMode.INCLUDE, apps = listOf("chrome.exe", "Discord.exe", "Telegram.exe")),
         ) }
         app.state.value.subscriptions.firstOrNull()?.let { sub ->
             val start = now - 7L * 86_400_000
@@ -96,13 +99,14 @@ object Screenshots {
         app.updateWidgets(listOf(
             HomeWidget(type = WidgetType.CONNECT, x = 0, y = 0, w = 4, h = 5),
             HomeWidget(type = WidgetType.SERVERS, x = 4, y = 0, w = 4, h = 9, opts = mapOf("sort" to "PING")),
-            HomeWidget(type = WidgetType.PING, x = 8, y = 0, w = 4, h = 3),
-            HomeWidget(type = WidgetType.QUOTA, x = 8, y = 3, w = 4, h = 3, opts = mapOf("chart" to "on")),
+            HomeWidget(type = WidgetType.SPEEDTEST, x = 8, y = 0, w = 4, h = 5),
             HomeWidget(type = WidgetType.USAGE, x = 0, y = 5, w = 4, h = 4),
-            HomeWidget(type = WidgetType.SITES, x = 8, y = 6, w = 4, h = 5),
+            HomeWidget(type = WidgetType.QUOTA, x = 8, y = 5, w = 4, h = 4, opts = mapOf("chart" to "on")),
+            HomeWidget(type = WidgetType.PING, x = 0, y = 9, w = 4, h = 3),
+            HomeWidget(type = WidgetType.SITES, x = 4, y = 9, w = 8, h = 4),
         ))
         Thread.sleep(600) // let the debounced state settle
-        ImageComposeScene(1700, 1160, Density(1.3f)) {
+        ImageComposeScene(1700, 1420, Density(1.3f)) {
             val s by app.state.collectAsState()
             UplinxTheme(s.settings) { AppRoot(app, onExit = {}, initial = Screen.HOME) }
         }.use { scene ->

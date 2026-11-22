@@ -1,16 +1,33 @@
-## Uplinx 1.5.0 — more widgets, more charts
+## Uplinx 1.6.0
 
-**Download:** `Uplinx-1.5.0-setup.exe` (installer), `Uplinx-1.5.0.msi`, or `Uplinx-1.5.0-portable-win64.zip`.
+**Download:** `Uplinx-1.6.0-setup.exe` (installer), `Uplinx-1.6.0.msi`, or `Uplinx-1.6.0-portable-win64.zip`.
 Older versions (including MyProxy 1.1–1.2) offer this update automatically.
 
-### New widgets
-- **Site check.** Add any sites (YouTube, Instagram, ChatGPT, Discord…). When you connect, and every minute after that, Uplinx opens them **through the VPN** and shows whether each one is reachable, its response time or HTTP code. Sites are added and removed right in the widget.
-- **Internet usage.** Daily bars for the last two weeks (download and upload), plus totals for today and this month. Uplinx keeps about four months of daily history.
+### Own title bar
+The Windows frame is gone. The new title bar in your Material You colours has:
+- the logo, the app name, and a **live status pill** (a pulsing dot, *Connected · server* or *Not connected*);
+- its own minimize / maximize / close buttons; close turns red on hover, like Windows.
 
-### Upgraded widgets
-- **Servers.** Every server with its ping, sorting by ping, name, recent or subscription order, ping-all, and one click to switch.
-- **Ping.** While connected, the current server is pinged through the tunnel every 20 seconds. The widget draws the chart with min / avg / max, and the chart can be turned off.
-- **Subscription.** A ring with the days left, the GB used or left, and an optional **chart of how the traffic was spent** (it builds up from subscription updates).
-- Widgets with options show a ⚙ in edit mode.
+Drag it to move the window and double-click to maximize (the taskbar stays visible). Resize from any edge or corner.
 
-All widgets can be dragged, resized, added and removed as in 1.4.0.
+### Split tunnelling
+Routing → **Split tunnelling**:
+- **Only chosen via VPN**, or **All except chosen**.
+- Pick from running programs with their real icons and search, or choose any `.exe`.
+- Works best in TUN mode, and the app says so (with a one-click *Turn on TUN*).
+
+### Speed test
+- Download, upload and ping of **any server without connecting to it**. It runs through a throwaway Xray bound to your physical adapter and Cloudflare's speed endpoints.
+- New **Speed test widget**: a speedometer with a springy needle, live Mbps per phase, and the last results.
+- **Speed test** item in every server's menu.
+
+### Windows notifications
+- Connected / disconnected.
+- Errors and dropped connections.
+- A subscription ends within 3 days or runs out of traffic (once a day).
+- A new version is available.
+
+Each kind can be turned off in Settings → *Windows notifications*, which also has a test button.
+
+### Logo
+A perfectly symmetric **u** with no tail, centred inside the Material 3 Expressive **four-leaf clover**, with a transparent background.

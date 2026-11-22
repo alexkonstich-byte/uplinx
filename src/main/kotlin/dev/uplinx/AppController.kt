@@ -129,7 +129,11 @@ class AppController(private val scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
             delay(8_000)
             while (true) {
-                if (_state.value.settings.checkUpdates) runCatching { Updater.check() }.onSuccess { update.value = it }
+                if (_state.value.settings.checkUpdates) runCatching { Updater.check() }.onSuccess { u ->
+                    if (u != null && update.value?.version != u.version && _state.value.settings.notifyUpdates)
+                        toast(L("Доступна версия %1", u.version), L("Откройте Uplinx, чтобы обновиться"))
+                    update.value = u
+                }
                 delay(6 * 3_600_000L)
             }
         }
@@ -142,6 +146,33 @@ class AppController(private val scope: CoroutineScope) {
                 update { it.copy(settings = it.settings.copy(lastSeenVersion = now)) }
             }
         }
+    }
+
+    /** Windows notifications (shown by the tray icon). */
+    data class Toast(val title: String, val text: String, val error: Boolean)
+    private val _toasts = MutableSharedFlow<Toast>(extraBufferCapacity = 8)
+    val toasts: SharedFlow<Toast> = _toasts.asSharedFlow()
+    fun toast(title: String, text: String, error: Boolean = false) { _toasts.tryEmit(Toast(title, text, error)) }
+
+    /** Once a day: warn about subscriptions that end within 3 days or ran out of traffic. */
+    private fun checkSubscriptionWarnings() {
+        val st = _state.value
+        val today = java.time.LocalDate.now().toString()
+        if (!st.settings.notifySubscription || st.settings.subWarnedDay == today) return
+        val soon = st.subscriptions.filter { s ->
+            val days = if (s.expire > 0) (s.expire * 1000 - System.currentTimeMillis()) / 86_400_000 else Long.MAX_VALUE
+            days in 0..3 || s.usedUp || s.expired
+        }
+        if (soon.isEmpty()) return
+        soon.forEach { s ->
+            val days = (s.expire * 1000 - System.currentTimeMillis()) / 86_400_000
+            toast(s.name, when {
+                s.expired -> L("Подписка истекла")
+                s.usedUp -> L("Трафик исчерпан")
+                else -> L("Подписка закончится через %1 дн.", days.coerceAtLeast(0))
+            }, error = s.expired || s.usedUp)
+        }
+        update { it.copy(settings = it.settings.copy(subWarnedDay = today)) }
     }
 
     fun notify(text: String, action: String? = null, onAction: (() -> Unit)? = null) {
@@ -207,6 +238,7 @@ class AppController(private val scope: CoroutineScope) {
             if (!tun) SystemProxy.enable(st.settings.httpPort, st.settings.socksPort)
             touchLastUsed(node.id)
             core.log(L("Подключено: %1 (%2)", node.name, st.settings.connectMode.title))
+            if (st.settings.notifyConnection) toast(L("Подключено"), "${node.name} · ${st.settings.connectMode.title}")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -222,6 +254,7 @@ class AppController(private val scope: CoroutineScope) {
         lastError.value = fe
         core.log(L("Ошибка: %1\n%2", fe.title, fe.details), 'E')
         notify("${fe.title}. ${fe.hint}", L("Подробнее")) { lastError.value = fe; showErrorDetails.value = true }
+        if (_state.value.settings.notifyErrors) toast(fe.title, fe.hint, error = true)
     }
 
     val showErrorDetails = MutableStateFlow(false)
@@ -232,9 +265,11 @@ class AppController(private val scope: CoroutineScope) {
 
     fun disconnect() = scope.launch {
         connectLock.withLock {
+            val wasRunning = isConnected
             runningSignature = null
             runCatching { SystemProxy.restore() }
             core.stop()
+            if (wasRunning && _state.value.settings.notifyConnection) toast(L("Отключено"), L("Трафик идёт напрямую"))
         }
     }
 
@@ -252,6 +287,7 @@ class AppController(private val scope: CoroutineScope) {
         val fe = Errors.explain(message)
         lastError.value = fe
         notify(L("Ядро остановилось: %1. Системный прокси отключён", fe.title), L("Подробнее")) { showErrorDetails.value = true }
+        if (_state.value.settings.notifyErrors) toast(L("Соединение потеряно"), L("Ядро остановилось: %1. Системный прокси отключён", fe.title), error = true)
     }
 
     fun shutdown() {
@@ -566,6 +602,27 @@ class AppController(private val scope: CoroutineScope) {
         } finally { sitesChecking.value = false }
     }
 
+    // ================================================================ speed test
+
+    val speedProgress = MutableStateFlow<SpeedProgress?>(null)
+    val speedTestingNode = MutableStateFlow<String?>(null)
+
+    /** Download / upload / ping of [node] through a throwaway core — works with or without a connection. */
+    fun runSpeedTest(node: ProxyNode? = selectedNode) = scope.launch(Dispatchers.IO) {
+        val n = node ?: run { notify(L("Сначала добавьте сервер или подписку")); return@launch }
+        if (speedTestingNode.value != null) return@launch
+        speedTestingNode.value = n.id
+        try {
+            if (!core.hasCore) core.installCore(geo = _state.value.settings.geoSource)
+            val r = SpeedTester.run(n, _state.value.settings) { speedProgress.value = it }
+            update { it.copy(settings = it.settings.copy(speedResults = (it.settings.speedResults + r).takeLast(30))) }
+            if (r.pingMs >= 0) _pings.update { it + (n.id to r.pingMs) }
+        } catch (e: CancellationException) { throw e } catch (e: Exception) {
+            speedProgress.value = null
+            notify(L("Тест скорости не удался: %1", Errors.explain(e.message ?: "").title))
+        } finally { speedTestingNode.value = null }
+    }
+
     fun setSites(list: List<String>) = update { it.copy(settings = it.settings.copy(sites = list.map { s -> s.trim() }.filter { s -> s.isNotEmpty() }.distinct())) }
 
     fun updateWidgets(list: List<HomeWidget>) = update { it.copy(settings = it.settings.copy(homeWidgets = list)) }
@@ -641,6 +698,7 @@ class AppController(private val scope: CoroutineScope) {
     private suspend fun autoUpdateLoop() {
         delay(5_000)
         while (true) {
+            checkSubscriptionWarnings()
             val now = System.currentTimeMillis()
             _state.value.subscriptions
                 .filter { it.autoUpdateHours > 0 && now - it.updatedAt > it.autoUpdateHours * 3_600_000L }

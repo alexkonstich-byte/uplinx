@@ -174,6 +174,28 @@ data class RoutingSettings(
 )
 
 @Serializable
+enum class SplitMode(private val ru: String) {
+    /** Only the chosen apps use the VPN. */
+    INCLUDE("Только выбранные через VPN"),
+    /** Everything uses the VPN except the chosen apps. */
+    EXCLUDE("Все, кроме выбранных");
+    val title: String get() = dev.uplinx.L(ru)
+}
+
+/** Per-app split tunnelling (Windows' answer to Android per-app VPN). Most precise in TUN mode. */
+@Serializable
+data class SplitTunnel(
+    val enabled: Boolean = false,
+    val mode: SplitMode = SplitMode.EXCLUDE,
+    /** Executable names, e.g. "chrome.exe". */
+    val apps: List<String> = emptyList(),
+)
+
+/** Result of one speed test. */
+@Serializable
+data class SpeedResult(val nodeId: String, val nodeName: String, val downMbps: Double, val upMbps: Double, val pingMs: Int, val at: Long)
+
+@Serializable
 enum class ConnectMode(private val ru: String) { SYSTEM_PROXY("Системный прокси"), TUN("TUN (весь трафик)");
     val title: String get() = dev.uplinx.L(ru)
 }
@@ -219,6 +241,7 @@ enum class WidgetType(val defW: Int, val defH: Int, val minW: Int, val minH: Int
     SERVERS(4, 5, 3, 3, 8, 10),
     SESSION(3, 2, 2, 2, 6, 3),
     SITES(4, 4, 3, 3, 12, 10),
+    SPEEDTEST(4, 4, 3, 4, 8, 8),
     USAGE(5, 3, 3, 2, 12, 6),
 }
 
@@ -277,6 +300,16 @@ data class AppSettings(
     /** Traffic per day ("yyyy-MM-dd" → bytes) for the usage widget. */
     val usageDown: Map<String, Long> = emptyMap(),
     val usageUp: Map<String, Long> = emptyMap(),
+    val split: SplitTunnel = SplitTunnel(),
+    // Windows notifications
+    val notifyConnection: Boolean = true,
+    val notifyErrors: Boolean = true,
+    val notifySubscription: Boolean = true,
+    val notifyUpdates: Boolean = true,
+    /** Day a subscription warning was last shown ("yyyy-MM-dd"), so it shows once a day. */
+    val subWarnedDay: String = "",
+    /** Last speed tests, newest last. */
+    val speedResults: List<SpeedResult> = emptyList(),
     /** Home screen layout; editable by dragging widgets in edit mode. */
     val homeWidgets: List<HomeWidget> = defaultHomeWidgets(),
     /** Version whose "What's new" was already shown. */

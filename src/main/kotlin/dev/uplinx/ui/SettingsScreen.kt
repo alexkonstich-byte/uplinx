@@ -150,6 +150,17 @@ fun SettingsScreen(app: AppController) {
             SwitchRow(Icons.Rounded.Minimize, L("Сворачивать в трей при закрытии"), null, s.minimizeToTray) { v -> set { it.copy(minimizeToTray = v) } }
         }
 
+        // ------------------------------------------------ notifications
+        SettingsGroup(L("Уведомления Windows")) {
+            SwitchRow(Icons.Rounded.Link, L("Подключение и отключение"), null, s.notifyConnection) { v -> set { it.copy(notifyConnection = v) } }
+            SwitchRow(Icons.Rounded.ErrorOutline, L("Ошибки и обрыв соединения"), null, s.notifyErrors) { v -> set { it.copy(notifyErrors = v) } }
+            SwitchRow(Icons.Rounded.Event, L("Подписка заканчивается"), L("За 3 дня до конца и когда кончился трафик, раз в день"), s.notifySubscription) { v -> set { it.copy(notifySubscription = v) } }
+            SwitchRow(Icons.Rounded.SystemUpdate, L("Новая версия"), null, s.notifyUpdates) { v -> set { it.copy(notifyUpdates = v) } }
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                OutlinedButton({ app.toast("Uplinx", L("Так выглядят уведомления")) }) { Icon(Icons.Rounded.NotificationsActive, null); Spacer(Modifier.width(6.dp)); Text(L("Проверить")) }
+            }
+        }
+
         // ------------------------------------------------ panels
         SettingsGroup(L("Подписки и панели")) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {

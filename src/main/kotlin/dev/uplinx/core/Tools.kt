@@ -57,6 +57,28 @@ object QrScanner {
 
 /** Executables currently running — for "per-app" routing rules (Windows' answer to Android per-app VPN). */
 object Processes {
+    /** Running programs: exe name → full path (first seen), for pickers with icons. */
+    fun runningWithPaths(): Map<String, String> = ProcessHandle.allProcesses().toList()
+        .mapNotNull { it.info().command().orElse(null) }
+        .filter { it.endsWith(".exe", ignoreCase = true) && !it.contains("\\Windows\\", ignoreCase = true) }
+        .groupBy { File(it).name.lowercase() }
+        .mapValues { it.value.first() }
+        .toSortedMap()
+
+    private val iconCache = java.util.concurrent.ConcurrentHashMap<String, java.awt.image.BufferedImage?>()
+
+    /** The Windows shell icon of an executable (32 px), cached. */
+    fun icon(path: String?): java.awt.image.BufferedImage? {
+        if (path == null) return null
+        return iconCache.getOrPut(path) {
+            runCatching {
+                val ic = javax.swing.filechooser.FileSystemView.getFileSystemView().getSystemIcon(File(path), 32, 32) ?: return@runCatching null
+                val img = java.awt.image.BufferedImage(ic.iconWidth, ic.iconHeight, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+                val g = img.createGraphics(); ic.paintIcon(null, g, 0, 0); g.dispose(); img
+            }.getOrNull()
+        }
+    }
+
     fun running(): List<String> = ProcessHandle.allProcesses().toList()
         .mapNotNull { it.info().command().orElse(null)?.let { c -> File(c).name } }
         .filter { it.endsWith(".exe", ignoreCase = true) }

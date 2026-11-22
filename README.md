@@ -40,6 +40,7 @@ Java is bundled, and the installer doesn't need administrator rights. The Xray c
 
 Available widgets:
 - **Connect button.**
+- **Speed test:** speedometer with download, upload and ping.
 - **Servers:** every server with its ping, sorting, and one click to switch.
 - **Ping:** with a live chart through the tunnel.
 - **My IP.**
@@ -50,6 +51,14 @@ Available widgets:
 - **Modes, current server and session timer.**
 
 Widgets with options get a ⚙ in edit mode. The layout is saved.
+
+**Own title bar.** The Windows frame is replaced by one in the app's own colours, with the logo, a live connection status and its own window buttons. You can drag it, double-click to maximize and resize from any edge.
+
+**Split tunnelling.** Choose to send *only chosen apps* through the VPN, or *everything except them*. Pick from running programs (with their icons) or any `.exe`.
+
+**Speed test.** Download, upload and ping of **any server without connecting to it**, using a throwaway core bound to your network adapter. It has its own speedometer widget and a *Speed test* item in every server's menu.
+
+**Windows notifications.** You get notified when Uplinx connects or disconnects, on errors and dropped connections, when a subscription ends within 3 days or runs out of traffic, and when a new version comes out. Each kind can be turned off.
 
 **Import anything.**
 - `vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`, `http(s)://`, `hy2://` / `hysteria2://`, `wireguard://` links;

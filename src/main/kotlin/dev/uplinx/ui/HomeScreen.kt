@@ -91,6 +91,7 @@ private val WidgetType.title: String
         WidgetType.SESSION -> L("Сессия")
         WidgetType.SITES -> L("Доступность сайтов")
         WidgetType.USAGE -> L("Использование интернета")
+        WidgetType.SPEEDTEST -> L("Тест скорости")
     }
 
 private val WidgetType.icon
@@ -106,6 +107,7 @@ private val WidgetType.icon
         WidgetType.SESSION -> Icons.Rounded.Timer
         WidgetType.SITES -> Icons.Rounded.FactCheck
         WidgetType.USAGE -> Icons.Rounded.BarChart
+        WidgetType.SPEEDTEST -> Icons.Rounded.Speed
     }
 
 // ======================================================================== screen
@@ -344,6 +346,7 @@ private fun WidgetContent(w: HomeWidget, app: AppController, onOpenServers: () -
         WidgetType.SERVERS -> ServersWidget(app, w, onOptions)
         WidgetType.SITES -> SitesWidget(app)
         WidgetType.USAGE -> UsageWidget(app)
+        WidgetType.SPEEDTEST -> SpeedTestWidget(app)
         WidgetType.SESSION -> {
             var now by remember { mutableStateOf(System.currentTimeMillis()) }
             LaunchedEffect(status) { while (status is CoreStatus.Running) { now = System.currentTimeMillis(); delay(1000) } }

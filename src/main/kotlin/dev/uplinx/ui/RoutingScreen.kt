@@ -41,6 +41,7 @@ fun RoutingScreen(app: AppController) {
                 }
             }
         }
+        item { SplitTunnelCard(app) }
         item {
             AnimatedVisibility(r.mode == RoutingMode.RULE, enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(),
                 exit = shrinkVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeOut()) {

@@ -79,6 +79,9 @@ object LatencyTester {
         return JsonObject(outbound + ("streamSettings" to JsonObject(stream + ("sockopt" to JsonObject(sockopt + ("interface" to JsonPrimitive(iface)))))))
     }
 
+    /** Binds an outbound to the physical adapter (when one is found). Used by the speed test too. */
+    fun bindToPhysical(outbound: JsonObject): JsonObject = bind(outbound, physicalInterface())
+
     /** Parallelism like Chumpy: 10, or 25 for long lists. */
     fun concurrencyFor(n: Int) = if (n > 45) 25 else 10
 

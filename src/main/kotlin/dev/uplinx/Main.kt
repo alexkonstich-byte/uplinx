@@ -15,6 +15,8 @@ import dev.uplinx.core.CoreStatus
 import dev.uplinx.core.WinUtil
 import dev.uplinx.ui.AppRoot
 import dev.uplinx.ui.UplinxTheme
+import dev.uplinx.ui.UplinxTitleBar
+import androidx.compose.foundation.layout.fillMaxSize
 import dev.uplinx.ui.markColors
 import kotlinx.coroutines.*
 import java.net.InetAddress
@@ -22,7 +24,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.system.exitProcess
 
-private const val INSTANCE_PORT = 47821
+private val INSTANCE_PORT = System.getProperty("uplinx.instancePort")?.toIntOrNull() ?: 47821
 
 /** Second launch (e.g. an uplinx:// link click) hands its arguments to the running instance and exits. */
 private fun forwardToRunningInstance(args: Array<String>): Boolean = runCatching {
@@ -41,8 +43,11 @@ fun main(args: Array<String>) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val app = AppController(scope)
     Runtime.getRuntime().addShutdownHook(Thread { app.shutdown() })
-    WinUtil.registerUrlScheme()
-    WinUtil.cleanupLegacy()
+    // a sandboxed run (separate data folder: tests, previews) never touches the user's registry
+    if (System.getProperty("uplinx.home") == null) {
+        WinUtil.registerUrlScheme()
+        WinUtil.cleanupLegacy()
+    }
 
     val incoming = MutableStateFlowCompat()
     server?.let { ss ->
@@ -86,7 +91,14 @@ fun main(args: Array<String>) {
                     else -> dev.uplinx.ui.UplinxIcon(markColors)
                 }
             }
+            val trayState = rememberTrayState()
+            LaunchedEffect(Unit) {
+                app.toasts.collect { t ->
+                    trayState.sendNotification(Notification(t.title, t.text, if (t.error) Notification.Type.Error else Notification.Type.Info))
+                }
+            }
             Tray(
+                state = trayState,
                 icon = trayIcon,
                 tooltip = "Uplinx — " + if (status is CoreStatus.Running) L("подключено") else L("отключено"),
                 onAction = { visible = true; windowState.isMinimized = false },
@@ -103,6 +115,8 @@ fun main(args: Array<String>) {
                 visible = visible,
                 state = windowState,
                 title = "Uplinx",
+                // our own M3 title bar replaces the system frame
+                undecorated = true,
                 icon = remember(markColors) { dev.uplinx.ui.UplinxIcon(markColors) },
                 onKeyEvent = { e ->
                     // Ctrl+V anywhere outside a text field imports links / configs
@@ -112,9 +126,18 @@ fun main(args: Array<String>) {
                 window.minimumSize = java.awt.Dimension(900, 620)
                 val caption = cs.surfaceContainer.toArgb(); val text = cs.onSurface.toArgb(); val border = cs.outlineVariant.toArgb()
                 val darkUi = cs.surface.luminance() < 0.5f
-                // the title bar follows the theme, including the animated palette changes
+                // rounded corners, border and dark mode still come from DWM (Windows 11)
                 LaunchedEffect(caption, text, border, darkUi) { dev.uplinx.core.WinUtil.styleTitleBar(window, caption, text, border, darkUi) }
-                AppRoot(app, onExit = exit)
+                val maximizer = remember { dev.uplinx.ui.WindowMaximizer(window) }
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
+                        UplinxTitleBar(app, maximizer,
+                            onMinimize = { windowState.isMinimized = true },
+                            onClose = { if (settings.settings.minimizeToTray) visible = false else exit() })
+                        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f)) { AppRoot(app, onExit = exit) }
+                    }
+                    dev.uplinx.ui.ResizeGrips(window, enabled = !maximizer.maximized)
+                }
             }
             if (mini) dev.uplinx.ui.MiniWindow(app, onOpen = { visible = true; windowState.isMinimized = false }, onClose = { app.miniWindow.value = false })
         }

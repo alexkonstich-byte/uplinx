@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.uplinx.ui
 
 import androidx.compose.material3.ColorScheme
@@ -15,6 +17,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.material3.toPath
 
 /** Tonal roles the mark is painted with — always taken from a Material You colour scheme. */
 data class MarkColors(
@@ -37,21 +40,25 @@ fun ColorScheme.markColors() = MarkColors(
     shine = Color.White,
 )
 
-/** Centre line of a lowercase "u" with a tail flicking right, on a 256 grid. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+private val tileShape = androidx.graphics.shapes.Morph(androidx.compose.material3.MaterialShapes.Clover4Leaf, androidx.compose.material3.MaterialShapes.Clover4Leaf)
+
+/** Centre line of a fully symmetric lowercase "u" (mirror axis x = 128) on a 256 grid. */
 private fun glyphPath() = Path().apply {
-    // left stem + bowl
-    moveTo(78f, 54f)
-    lineTo(78f, 126f)
-    cubicTo(78f, 170f, 102f, 192f, 130f, 192f)
-    cubicTo(158f, 192f, 178f, 170f, 178f, 126f)
-    // right stem, running down into the tail
-    moveTo(178f, 54f)
-    lineTo(178f, 178f)
-    quadraticTo(178f, 214f, 222f, 214f)
+    moveTo(78f, 60f)
+    lineTo(78f, 130f)
+    cubicTo(78f, 172f, 100f, 196f, 128f, 196f)
+    cubicTo(156f, 196f, 178f, 172f, 178f, 130f)
+    lineTo(178f, 60f)
 }
 
+// Stroke 56 → glyph spans x 50..206, y 32..224; the extrusion adds ~10/13 px down-right.
+// Shifting by half of that keeps the letter *with* its depth optically centred.
+private const val CENTER_DX = -5f
+private const val CENTER_DY = -6.5f
+
 /**
- * The Uplinx mark: a chunky, extruded lowercase "u" with a tail, on a soft M3 tile.
+ * The Uplinx mark: a chunky, extruded, perfectly symmetric lowercase "u", centred on a soft M3 tile.
  * Depth comes from stacking the glyph in a deep tone; the face carries a primary→tertiary gradient
  * and a soft highlight. Drawn on a 256 grid and scaled to the canvas.
  */
@@ -59,13 +66,15 @@ fun DrawScope.drawUplinxMark(c: MarkColors, tile: Boolean = true) {
     val k = size.minDimension / 256f
     scale(k, k, pivot = Offset.Zero) {
         if (tile) {
-            drawRoundRect(
-                Brush.linearGradient(listOf(c.container, c.containerEdge), Offset(0f, 0f), Offset(256f, 256f)),
-                Offset(8f, 8f), Size(240f, 240f), CornerRadius(68f, 68f),
-            )
+            // the M3 Expressive four-leaf clover; everything outside it stays transparent
+            val bun = tileShape.toPath(0f)
+            val m = androidx.compose.ui.graphics.Matrix()
+            m.translate(4f, 4f); m.scale(248f, 248f)
+            bun.transform(m)
+            drawPath(bun, Brush.linearGradient(listOf(c.container, c.containerEdge), Offset(0f, 0f), Offset(256f, 256f)))
         }
         val g = if (tile) 0.74f else 0.98f
-        scale(g, g, pivot = Offset(128f, 128f)) {
+        scale(g, g, pivot = Offset(128f, 128f)) { translate(CENTER_DX, CENTER_DY) {
             val path = glyphPath()
             val w = 56f
             val stroke = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round)
@@ -82,7 +91,7 @@ fun DrawScope.drawUplinxMark(c: MarkColors, tile: Boolean = true) {
             drawPath(path, Brush.linearGradient(
                 0f to c.shine.copy(alpha = 0.38f), 0.42f to c.shine.copy(alpha = 0.06f), 0.6f to Color.Transparent,
                 start = Offset(60f, 30f), end = Offset(200f, 210f)), style = stroke)
-        }
+        } }
     }
 }
 
