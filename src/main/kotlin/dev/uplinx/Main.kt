@@ -110,9 +110,9 @@ fun main(args: Array<String>) {
                     Item(L("Выход"), onClick = exit)
                 },
             )
-            Window(
+            // hidden to tray = no window at all: its composition and GPU surfaces are freed
+            if (visible) Window(
                 onCloseRequest = { if (settings.settings.minimizeToTray) visible = false else exit() },
-                visible = visible,
                 state = windowState,
                 title = "Uplinx",
                 // our own M3 title bar replaces the system frame
@@ -141,6 +141,12 @@ fun main(args: Array<String>) {
                     }
                     dev.uplinx.ui.ResizeGrips(window, enabled = !maximizer.maximized)
                 }
+                }
+            }
+            LaunchedEffect(visible, windowState.isMinimized) {
+                if (!visible || windowState.isMinimized) {
+                    kotlinx.coroutines.delay(1500)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { dev.uplinx.core.WinUtil.trimMemory() }
                 }
             }
             if (mini) dev.uplinx.ui.MiniWindow(app, onOpen = { visible = true; windowState.isMinimized = false }, onClose = { app.miniWindow.value = false })

@@ -83,11 +83,30 @@ object SystemProxy {
     }
 }
 
+private interface Psapi2 : StdCallLibrary {
+    fun EmptyWorkingSet(process: com.sun.jna.platform.win32.WinNT.HANDLE): Boolean
+}
+
 private interface DwmApi : StdCallLibrary {
     fun DwmSetWindowAttribute(hwnd: com.sun.jna.platform.win32.WinDef.HWND, attr: Int, value: com.sun.jna.ptr.IntByReference, size: Int): Int
 }
 
 object WinUtil {
+    private val psapi by lazy { runCatching { Native.load("psapi", Psapi2::class.java, W32APIOptions.DEFAULT_OPTIONS) }.getOrNull() }
+
+    /**
+     * After the window goes away: collect garbage (Serial GC then shrinks the heap) and ask Windows to take
+     * back the pages we no longer touch — Task Manager's "Memory" drops accordingly.
+     */
+    fun trimMemory() {
+        runCatching {
+            System.gc()
+            Thread.sleep(200)
+            System.gc()
+            psapi?.EmptyWorkingSet(com.sun.jna.platform.win32.Kernel32.INSTANCE.GetCurrentProcess())
+        }
+    }
+
     private val shell by lazy { Native.load("shell32", Shell32Ex::class.java, W32APIOptions.DEFAULT_OPTIONS) }
     private val dwm by lazy { runCatching { Native.load("dwmapi", DwmApi::class.java, W32APIOptions.DEFAULT_OPTIONS) }.getOrNull() }
 

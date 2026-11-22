@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.uplinx"
-version = (findProperty("appVersion") as String?) ?: "1.6.3"
+version = (findProperty("appVersion") as String?) ?: "1.6.4"
 
 dependencies {
     implementation(compose.desktop.currentOs)
@@ -39,8 +39,11 @@ compose.desktop {
         jvmArgs += listOf(
             "-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Duplinx.version=${project.version}",
             // a small heap that is handed back to Windows when idle, instead of the JVM default (1/4 of RAM)
-            "-Xms48m", "-Xmx320m", "-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=15000",
-            "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=25", "-XX:+UseStringDeduplication",
+            // footprint over peak throughput: a UI app with a small live set
+            "-Xms16m", "-Xmx192m", "-XX:+UseSerialGC", "-XX:MinHeapFreeRatio=5", "-XX:MaxHeapFreeRatio=15",
+            "-XX:+UseCompactObjectHeaders",                       // Java 25: 8-byte object headers
+            "-XX:TieredStopAtLevel=1", "-XX:ReservedCodeCacheSize=48m", // C1 only: less JIT memory
+            "-Xss512k", "-XX:MaxDirectMemorySize=64m",
         )
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
