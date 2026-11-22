@@ -1,0 +1,24 @@
+[package]
+name = "uplinx"
+version = "2.0.0-alpha.1"
+edition = "2024"
+description = "Uplinx Client"
+license = "MIT"
+
+[dependencies]
+slint = { version = "1.19.0", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "unstable-winit-030"] }
+material-colors = "0.5.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+winreg = "0.56.0"
+anyhow = "1.0.104"
+
+[build-dependencies]
+slint-build = "1.19.0"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

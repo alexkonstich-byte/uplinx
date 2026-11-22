@@ -89,3 +89,11 @@ tasks.register<JavaExec>("pingCheck") {
     mainClass = "dev.uplinx.PingCheck"
     listOf("uplinx.home", "ping.count").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
 }
+
+// Exports Material 3 Expressive shapes as SVG paths for the Rust/Slint port (uplinx-rs/ui/shapes.slint).
+tasks.register<JavaExec>("shapeExport") {
+    dependsOn("testClasses")
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass = "dev.uplinx.ShapeExport"
+    workingDir = projectDir
+}
