@@ -257,6 +257,46 @@ fun FlagText(
         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, inlineContent = inline)
 }
 
+/** First flag in [text] as a Twemoji id (e.g. "1f1f3-1f1f1") and the text without it. */
+fun splitLeadingFlag(text: String): Pair<String?, String> {
+    var i = 0
+    while (i < text.length) {
+        val cp = text.codePointAt(i)
+        val n1 = Character.charCount(cp)
+        if (isRegional(cp) && i + n1 < text.length) {
+            val cp2 = text.codePointAt(i + n1)
+            if (isRegional(cp2)) {
+                val end = i + n1 + Character.charCount(cp2)
+                val rest = (text.substring(0, i) + text.substring(end)).trim().trimStart('·', '-', '|', ' ').trim()
+                return "%x-%x".format(cp, cp2) to rest.ifBlank { text }
+            }
+        }
+        i += n1
+    }
+    return null to text
+}
+
+/**
+ * Server avatar: the country flag when the name has one, cropped into an expressive shape that
+ * morphs and turns when selected; otherwise the protocol badge.
+ */
+@Composable
+fun NodeAvatar(flagId: String?, protocol: Protocol, selected: Boolean, modifier: Modifier = Modifier) {
+    val painter = flagId?.let { flagPainter(it) }
+    if (painter == null) { ProtocolAvatar(protocol, selected, modifier); return }
+    val cs = MaterialTheme.colorScheme
+    val morph = remember { Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided) }
+    val p by animateFloatAsState(if (selected) 1f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "flagMorph")
+    val ring by animateColorAsState(if (selected) cs.primary else cs.outlineVariant, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "flagRing")
+    val shape = MorphShape(morph, p, p * 20f)
+    Box(modifier.size(44.dp).clip(shape).background(ring), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(if (selected) 38.dp else 41.dp).clip(shape).background(cs.surfaceContainerHighest)) {
+            // Twemoji flags have transparent margins; scale up so the flag fills the shape
+            androidx.compose.foundation.Image(painter, null, Modifier.fillMaxSize().scale(1.75f), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+        }
+    }
+}
+
 fun ProxyNode.displayEndpoint(mask: Boolean) = if (mask) protocol.title else "$endpoint · ${protocol.title}"
 
 /** Subscription logo from the panel's profile-logo header, or a shaped icon. */

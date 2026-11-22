@@ -156,14 +156,18 @@ private fun ModeSwitchers(connectMode: ConnectMode, routingMode: RoutingMode, ap
 private fun CurrentServerCard(name: String?, subtitle: String?, ping: Int?, testing: Boolean, amnezia: Boolean, onClick: () -> Unit, onPing: () -> Unit) {
     ElevatedCard(onClick = onClick, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                Surface(shape = PolygonShape(MaterialShapes.Cookie7Sided), color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxSize()) {}
-                Icon(Icons.Rounded.Dns, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+            val (flagId, title) = remember(name) { name?.let(::splitLeadingFlag) ?: (null to null) }
+            AnimatedContent(flagId, transitionSpec = { (fadeIn() + scaleIn(initialScale = 0.6f)) togetherWith (fadeOut() + scaleOut(targetScale = 0.6f)) }, label = "flag") { f ->
+                if (f != null) NodeAvatar(f, dev.myproxy.data.Protocol.VLESS, selected = true, modifier = Modifier.size(48.dp))
+                else Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    Surface(shape = PolygonShape(MaterialShapes.Cookie7Sided), color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxSize()) {}
+                    Icon(Icons.Rounded.Dns, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                }
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text("Сервер", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                AnimatedContent(name, transitionSpec = { (fadeIn() + slideInHorizontally { it / 3 }) togetherWith (fadeOut() + slideOutHorizontally { -it / 3 }) }, label = "srv") { n ->
+                AnimatedContent(title, transitionSpec = { (fadeIn() + slideInHorizontally { it / 3 }) togetherWith (fadeOut() + slideOutHorizontally { -it / 3 }) }, label = "srv") { n ->
                     FlagText(n ?: "Не выбран", style = MaterialTheme.typography.titleLarge)
                 }
                 if (subtitle != null) Text(subtitle + if (amnezia) " · движок AmneziaWG" else "", style = MaterialTheme.typography.bodySmall,

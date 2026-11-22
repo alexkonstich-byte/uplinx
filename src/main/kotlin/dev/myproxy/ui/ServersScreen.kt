@@ -228,11 +228,12 @@ private fun NodeRow(
     Surface(onClick = onClick, shape = RoundedCornerShape(corner), color = container,
         border = if (selected) BorderStroke(2.dp, cs.primary) else null, modifier = modifier.fillMaxWidth().graphicsLayer { this.alpha = alpha }) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            ProtocolAvatar(n.protocol, selected)
+            val (flagId, title) = remember(n.name) { splitLeadingFlag(n.name) }
+            NodeAvatar(flagId, n.protocol, selected)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    FlagText(n.name, style = MaterialTheme.typography.titleMedium, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    FlagText(title, style = MaterialTheme.typography.titleMedium, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                         modifier = Modifier.weight(1f, fill = false))
                     if (hidden) Icon(Icons.Rounded.VisibilityOff, "Скрыт", Modifier.padding(start = 6.dp).size(16.dp), tint = cs.onSurfaceVariant)
                 }
