@@ -17,6 +17,8 @@ pub const PING_UNKNOWN: i32 = -100;
 pub struct View {
     pub search: String,
     pub log_filter: i32,
+    pub log_search: String,
+    pub logs_paused: bool,
     flags: HashMap<String, Option<Image>>,
     logos: HashMap<String, Option<Image>>,
     sig_nodes: u64,
@@ -84,6 +86,7 @@ impl View {
             glyph: ss(if n.protocol == "XRAY_CONFIG" { "\u{e9ee}" } else if n.protocol == "WIREGUARD" { "\u{e897}" } else { "\u{e80b}" }),
             ping: if testing { PING_TESTING } else { pings.get(&n.id).copied().unwrap_or(PING_UNKNOWN) }, testing,
             selected: n.id == sel, hidden: st.hidden.contains(&n.identity()), count: 0,
+            favorite: st.settings.favorites.contains(&n.identity()), collapsed: false,
         }
     }
 
@@ -203,7 +206,7 @@ impl View {
         // ---- servers
         let sig = hash(&(st.nodes.iter().map(|n| (&n.id, &n.name, &n.address, n.port)).collect::<Vec<_>>(), &pings.iter().collect::<std::collections::BTreeMap<_, _>>(),
             &testing.iter().collect::<std::collections::BTreeSet<_>>(), &sel_id, &self.search, &st.settings.server_sort, st.settings.show_hidden, st.settings.mask_addresses, &st.hidden,
-            st.subscriptions.iter().map(|s| (&s.id, &s.name)).collect::<Vec<_>>()));
+            st.subscriptions.iter().map(|s| (&s.id, &s.name)).collect::<Vec<_>>(), &st.settings.favorites, &st.settings.collapsed_groups));
         if sig != self.sig_nodes {
             self.sig_nodes = sig;
             let q = self.search.to_lowercase();
@@ -211,33 +214,47 @@ impl View {
                 && (q.is_empty() || n.name.to_lowercase().contains(&q) || n.address.to_lowercase().contains(&q))).collect();
             let pk = |n: &ProxyNode| pings.get(&n.id).map(|&p| if p >= 0 { p } else { i32::MAX - 1 }).unwrap_or(i32::MAX);
             let mut items = vec![];
+            let fav = |n: &ProxyNode| st.settings.favorites.contains(&n.identity());
             match st.settings.server_sort.as_str() {
                 "NAME" => visible.sort_by_key(|n| split_flag(&n.name).1.to_lowercase()),
                 "PING" => visible.sort_by_key(|n| pk(n)),
                 "RECENT" => visible.sort_by_key(|n| -n.last_used_at),
                 _ => {}
             }
-            if st.settings.server_sort == "MANUAL" && !st.subscriptions.is_empty() {
-                let mut groups: Vec<(Option<String>, String)> = st.subscriptions.iter().map(|s| (Some(s.id.clone()), s.name.clone())).collect();
-                groups.sort_by_key(|g| !st.subscriptions.iter().find(|s| Some(&s.id) == g.0.as_ref()).is_some_and(|s| s.pinned));
-                groups.push((None, t!("Manual servers")));
+            let has_fav = visible.iter().any(|n| fav(n));
+            if st.settings.server_sort == "MANUAL" && (!st.subscriptions.is_empty() || has_fav) {
+                // favourites get their own group on top; every group can be folded
+                let mut groups: Vec<(String, String)> = vec![];
+                if has_fav { groups.push(("fav".into(), t!("Favourites"))); }
+                let mut subs: Vec<&Subscription> = st.subscriptions.iter().collect();
+                subs.sort_by_key(|s| !s.pinned);
+                groups.extend(subs.iter().map(|s| (s.id.clone(), s.name.clone())));
+                groups.push(("manual".into(), t!("Manual servers")));
                 for (gid, gname) in groups {
-                    let members: Vec<&&ProxyNode> = visible.iter().filter(|n| n.subscription_id == gid).collect();
+                    let members: Vec<&&ProxyNode> = visible.iter().filter(|n| match gid.as_str() {
+                        "fav" => fav(n),
+                        "manual" => !fav(n) && n.subscription_id.is_none(),
+                        g => !fav(n) && n.subscription_id.as_deref() == Some(g),
+                    }).collect();
                     if members.is_empty() { continue; }
-                    items.push(NodeItem { header: true, name: ss(&gname), count: members.len() as i32, ..Default::default() });
+                    let folded = st.settings.collapsed_groups.contains(&gid);
+                    items.push(NodeItem { id: ss(&gid), header: true, name: ss(&gname), count: members.len() as i32, collapsed: folded, ..Default::default() });
+                    if folded { continue; }
                     for n in members { items.push(self.node_item(n, &st, &pings, testing.contains(&n.id), &sel_id)); }
                 }
             } else {
+                visible.sort_by_key(|n| !fav(n)); // stable: keeps the chosen order inside both parts
                 for n in &visible { items.push(self.node_item(n, &st, &pings, testing.contains(&n.id), &sel_id)); }
             }
             ui.set_node_count(visible.len() as i32);
             ui.set_nodes(model(items));
             let mut top: Vec<&ProxyNode> = visible.clone();
-            top.sort_by_key(|n| (n.id != sel_id, pk(n)));
+            top.sort_by_key(|n| (n.id != sel_id, !fav(n), pk(n)));
             let top_items: Vec<NodeItem> = top.iter().take(30).map(|n| self.node_item(n, &st, &pings, testing.contains(&n.id), &sel_id)).collect();
             ui.set_top_nodes(model(top_items));
         }
         ui.set_pinging(!testing.is_empty());
+        ui.set_has_servers(!st.nodes.is_empty() || !st.subscriptions.is_empty());
 
         // ---- subscriptions
         let updating = app.updating.lock().unwrap().clone();
@@ -289,10 +306,12 @@ impl View {
 
         // ---- logs
         let logs = app.core.logs.lock().unwrap();
-        let lsig = (logs.len(), self.log_filter, logs.last().map(|l| l.time).unwrap_or(0));
-        if lsig != self.sig_logs {
+        let lsig = (logs.len(), self.log_filter, logs.last().map(|l| l.time).unwrap_or(0) ^ hash(&self.log_search) as i64);
+        if lsig != self.sig_logs && !self.logs_paused {
+            let q = self.log_search.to_lowercase();
             self.sig_logs = lsig;
-            let items: Vec<LogItem> = logs.iter().rev().filter(|l| match self.log_filter { 1 => l.level == 'W' || l.level == 'E', 2 => l.level == 'E', _ => true }).take(1000)
+            let items: Vec<LogItem> = logs.iter().rev().filter(|l| match self.log_filter { 1 => l.level == 'W' || l.level == 'E', 2 => l.level == 'E', _ => true })
+                .filter(|l| q.is_empty() || l.text.to_lowercase().contains(&q)).take(1000)
                 .map(|l| LogItem { time: ss(clock(l.time)), level: ss(l.level.to_string()), text: ss(&l.text) }).collect();
             drop(logs);
             ui.set_logs(model(items));
@@ -319,6 +338,7 @@ impl View {
                 autostart: crate::win::autostart(), check_updates: s.check_updates, notify_connection: s.notify_connection, notify_errors: s.notify_errors,
                 notify_subscription: s.notify_subscription, notify_updates: s.notify_updates, mask_addresses: s.mask_addresses, show_hidden: s.show_hidden,
                 server_sort: match s.server_sort.as_str() { "NAME" => 1, "PING" => 2, "RECENT" => 3, _ => 0 }, hwid: ss(&s.hwid),
+                clipboard_offer: s.clipboard_offer, auto_ping: s.auto_ping, auto_reconnect: s.auto_reconnect, kill_switch: s.kill_switch,
             });
         }
 
@@ -333,12 +353,12 @@ impl View {
         if let Some((_, s)) = pi { ui.set_pending_summary(ss(s)); }
         let upd = app.update.lock().unwrap().clone();
         ui.set_update_available(upd.is_some());
-        if let Some(u) = upd { ui.set_update_version(ss(&u.version)); ui.set_update_notes(ss(&u.notes)); }
+        if let Some(u) = upd { ui.set_update_version(ss(&u.version)); ui.set_update_notes(ss(plain_notes(&u.notes))); }
         ui.set_update_progress(app.update_progress.lock().unwrap().unwrap_or(-1.0));
         ui.set_update_ready(app.update_ready.lock().unwrap().is_some());
         let wn = app.whats_new.lock().unwrap().clone();
         ui.set_whats_new(wn.is_some());
-        if let Some(u) = wn { ui.set_whats_new_version(ss(&u.version)); ui.set_whats_new_notes(ss(&u.notes)); }
+        if let Some(u) = wn { ui.set_whats_new_version(ss(&u.version)); ui.set_whats_new_notes(ss(plain_notes(&u.notes))); }
         ui.set_core_version(ss(app.core_version()));
         ui.set_is_admin(crate::win::is_admin());
     }
@@ -369,6 +389,22 @@ impl View {
 }
 
 // ------------------------------------------------------------------ formatting
+
+/// Release notes are Markdown; the dialog shows plain text: no emphasis marks, bullets as •, no "Downloads" section.
+pub fn plain_notes(md: &str) -> String {
+    let mut out = vec![];
+    for line in md.lines() {
+        let l = line.trim_end();
+        if l.trim_start().starts_with("**Downloads**") || l.trim_start().starts_with("## Download") { break; }
+        let l = l.replace("**", "").replace('`', "");
+        let t = l.trim_start();
+        let l = if let Some(h) = t.strip_prefix("## ").or_else(|| t.strip_prefix("# ")) { h.to_string() }
+            else if let Some(b) = t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")) { format!("•  {b}") } else { l.clone() };
+        out.push(l);
+    }
+    while out.last().is_some_and(|l| l.trim().is_empty()) { out.pop(); }
+    out.join("\n")
+}
 
 pub fn fmt_bytes(b: i64) -> String {
     let b = b.max(0) as f64;

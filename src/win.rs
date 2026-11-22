@@ -91,19 +91,35 @@ pub fn listen_instances(l: TcpListener, on: impl Fn(Vec<String>) + Send + 'stati
 
 // ------------------------------------------------------------------ tray
 
-#[derive(Clone, Copy, Debug)]
-pub enum TrayEvent { Show, Toggle, Quit }
+#[derive(Clone, Debug)]
+pub enum TrayEvent { Show, Toggle, Quit, Fastest, Select(String), ConnectMode(&'static str), RoutingMode(&'static str) }
+
+/// What the tray menu shows; built fresh every time it opens.
+pub struct TrayMenu {
+    pub connected: bool,
+    pub servers: Vec<(String, String, bool)>, // id, name, selected
+    pub connect_mode: String,
+    pub routing_mode: String,
+    pub labels: Vec<String>, // show, connect/disconnect, fastest, servers, mode, system proxy, TUN, by rules, global, direct, quit
+}
 
 const WM_TRAY: u32 = WM_APP + 1;
 const ID_SHOW: usize = 1;
 const ID_TOGGLE: usize = 2;
 const ID_QUIT: usize = 3;
+const ID_FASTEST: usize = 4;
+const ID_PROXY: usize = 10;
+const ID_TUN: usize = 11;
+const ID_RULE: usize = 20;
+const ID_GLOBAL: usize = 21;
+const ID_DIRECT: usize = 22;
+const ID_SERVER: usize = 100;
 
 thread_local! {
     static TRAY: RefCell<Option<Tray>> = const { RefCell::new(None) };
 }
 
-struct Tray { hwnd: HWND, cb: Box<dyn Fn(TrayEvent)>, connected: bool, labels: [String; 3] }
+struct Tray { hwnd: HWND, cb: Box<dyn Fn(TrayEvent)>, menu: Box<dyn Fn() -> TrayMenu>, server_ids: Vec<String> }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if msg == WM_TRAY {
@@ -113,7 +129,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         return 0;
     }
     if msg == WM_COMMAND {
-        match wp & 0xffff { ID_SHOW => fire(TrayEvent::Show), ID_TOGGLE => fire(TrayEvent::Toggle), ID_QUIT => fire(TrayEvent::Quit), _ => {} }
+        let id = wp & 0xffff;
+        let e = match id {
+            ID_SHOW => Some(TrayEvent::Show), ID_TOGGLE => Some(TrayEvent::Toggle), ID_QUIT => Some(TrayEvent::Quit), ID_FASTEST => Some(TrayEvent::Fastest),
+            ID_PROXY => Some(TrayEvent::ConnectMode("SYSTEM_PROXY")), ID_TUN => Some(TrayEvent::ConnectMode("TUN")),
+            ID_RULE => Some(TrayEvent::RoutingMode("RULE")), ID_GLOBAL => Some(TrayEvent::RoutingMode("GLOBAL")), ID_DIRECT => Some(TrayEvent::RoutingMode("DIRECT")),
+            i if i >= ID_SERVER => TRAY.with(|t| t.borrow().as_ref().and_then(|t| t.server_ids.get(i - ID_SERVER).cloned())).map(TrayEvent::Select),
+            _ => None,
+        };
+        if let Some(e) = e { fire(e); }
         return 0;
     }
     unsafe { DefWindowProcW(hwnd, msg, wp, lp) }
@@ -126,23 +150,40 @@ fn fire(e: TrayEvent) {
 }
 
 fn show_menu(hwnd: HWND) {
-    TRAY.with(|t| {
-        let t = t.borrow();
-        let Some(t) = t.as_ref() else { return };
-        unsafe {
-            let m = CreatePopupMenu();
-            let (a, b, c) = (w(&t.labels[0]), w(&t.labels[1]), w(&t.labels[2]));
-            AppendMenuW(m, MF_STRING, ID_SHOW, a.as_ptr());
-            AppendMenuW(m, MF_STRING, ID_TOGGLE, b.as_ptr());
-            AppendMenuW(m, MF_SEPARATOR, 0, std::ptr::null());
-            AppendMenuW(m, MF_STRING, ID_QUIT, c.as_ptr());
-            let mut p = POINT { x: 0, y: 0 };
-            GetCursorPos(&mut p);
-            SetForegroundWindow(hwnd);
-            TrackPopupMenu(m, TPM_RIGHTBUTTON, p.x, p.y, 0, hwnd, std::ptr::null());
-            DestroyMenu(m);
+    let m = TRAY.with(|t| t.borrow().as_ref().map(|t| (t.menu)()));
+    let Some(m) = m else { return };
+    let l = |i: usize| w(m.labels.get(i).map(String::as_str).unwrap_or(""));
+    unsafe {
+        let add = |menu: HMENU, flags: u32, id: usize, text: &[u16]| { AppendMenuW(menu, flags, id, text.as_ptr()); };
+        let root = CreatePopupMenu();
+        add(root, MF_STRING | MF_DEFAULT, ID_SHOW, &l(0));
+        add(root, MF_SEPARATOR, 0, &[0]);
+        add(root, MF_STRING, ID_TOGGLE, &l(1));
+        add(root, MF_STRING, ID_FASTEST, &l(2));
+        // servers: favourites and the fastest first, at most 25
+        let servers = CreatePopupMenu();
+        for (i, (_, name, sel)) in m.servers.iter().enumerate() {
+            add(servers, MF_STRING | if *sel { MF_CHECKED } else { 0 }, ID_SERVER + i, &w(name));
         }
-    });
+        if m.servers.is_empty() { add(servers, MF_STRING | MF_GRAYED, 0, &w("—")); }
+        add(root, MF_POPUP, servers as usize, &l(3));
+        let modes = CreatePopupMenu();
+        add(modes, MF_STRING | if m.connect_mode != "TUN" { MF_CHECKED } else { 0 }, ID_PROXY, &l(5));
+        add(modes, MF_STRING | if m.connect_mode == "TUN" { MF_CHECKED } else { 0 }, ID_TUN, &l(6));
+        add(modes, MF_SEPARATOR, 0, &[0]);
+        add(modes, MF_STRING | if m.routing_mode == "RULE" { MF_CHECKED } else { 0 }, ID_RULE, &l(7));
+        add(modes, MF_STRING | if m.routing_mode == "GLOBAL" { MF_CHECKED } else { 0 }, ID_GLOBAL, &l(8));
+        add(modes, MF_STRING | if m.routing_mode == "DIRECT" { MF_CHECKED } else { 0 }, ID_DIRECT, &l(9));
+        add(root, MF_POPUP, modes as usize, &l(4));
+        add(root, MF_SEPARATOR, 0, &[0]);
+        add(root, MF_STRING, ID_QUIT, &l(10));
+        TRAY.with(|t| if let Some(t) = t.borrow_mut().as_mut() { t.server_ids = m.servers.iter().map(|x| x.0.clone()).collect(); });
+        let mut p = POINT { x: 0, y: 0 };
+        GetCursorPos(&mut p);
+        SetForegroundWindow(hwnd);
+        TrackPopupMenu(root, TPM_RIGHTBUTTON, p.x, p.y, 0, hwnd, std::ptr::null());
+        DestroyMenu(root); // also destroys the submenus
+    }
 }
 
 fn nid(hwnd: HWND) -> NOTIFYICONDATAW {
@@ -162,7 +203,7 @@ fn app_icon() -> HICON {
 }
 
 /// Must run on the UI thread (winit pumps its messages).
-pub fn tray_create(tooltip: &str, labels: [String; 3], cb: impl Fn(TrayEvent) + 'static) {
+pub fn tray_create(tooltip: &str, menu: impl Fn() -> TrayMenu + 'static, cb: impl Fn(TrayEvent) + 'static) {
     unsafe {
         let class = w("UplinxTray");
         let wc = WNDCLASSW { lpfnWndProc: Some(wndproc), hInstance: GetModuleHandleW(std::ptr::null()), lpszClassName: class.as_ptr(), ..std::mem::zeroed() };
@@ -176,15 +217,14 @@ pub fn tray_create(tooltip: &str, labels: [String; 3], cb: impl Fn(TrayEvent) + 
         Shell_NotifyIconW(NIM_ADD, &n);
         n.Anonymous.uVersion = NOTIFYICON_VERSION_4;
         Shell_NotifyIconW(NIM_SETVERSION, &n);
-        TRAY.with(|t| *t.borrow_mut() = Some(Tray { hwnd, cb: Box::new(cb), connected: false, labels }));
+        TRAY.with(|t| *t.borrow_mut() = Some(Tray { hwnd, cb: Box::new(cb), menu: Box::new(menu), server_ids: vec![] }));
     }
 }
 
-pub fn tray_update(tooltip: &str, labels: [String; 3], connected: bool) {
+pub fn tray_update(tooltip: &str) {
     TRAY.with(|t| {
-        let mut t = t.borrow_mut();
-        let Some(t) = t.as_mut() else { return };
-        t.labels = labels; t.connected = connected;
+        let t = t.borrow();
+        let Some(t) = t.as_ref() else { return };
         let mut n = nid(t.hwnd);
         n.uFlags = NIF_TIP;
         copy_w(&mut n.szTip, tooltip);
@@ -248,4 +288,31 @@ pub fn open_files(title: &str) -> Vec<std::path::PathBuf> {
         [dir, files @ ..] => files.iter().map(|f| std::path::Path::new(dir).join(f)).collect(),
         _ => vec![],
     }
+}
+
+/// Standard "Save as" dialog. Blocks the calling thread.
+pub fn save_file(title: &str, default_name: &str) -> Option<std::path::PathBuf> {
+    use windows_sys::Win32::UI::Controls::Dialogs::*;
+    let mut buf = vec![0u16; 4096];
+    let d: Vec<u16> = default_name.encode_utf16().collect();
+    buf[..d.len()].copy_from_slice(&d);
+    let filter: Vec<u16> = "Text (*.txt)\0*.txt\0All files\0*.*\0\0".encode_utf16().collect();
+    let t = w(title);
+    let ext = w("txt");
+    let mut ofn: OPENFILENAMEW = unsafe { std::mem::zeroed() };
+    ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+    ofn.lpstrFilter = filter.as_ptr();
+    ofn.lpstrFile = buf.as_mut_ptr();
+    ofn.nMaxFile = buf.len() as u32;
+    ofn.lpstrTitle = t.as_ptr();
+    ofn.lpstrDefExt = ext.as_ptr();
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR | OFN_EXPLORER;
+    if unsafe { GetSaveFileNameW(&mut ofn) } == 0 { return None; }
+    let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    Some(String::from_utf16_lossy(&buf[..n]).into())
+}
+
+/// Virtual screen rectangle (all monitors): x, y, width, height.
+pub fn virtual_screen() -> (i32, i32, i32, i32) {
+    unsafe { (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN), GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN)) }
 }

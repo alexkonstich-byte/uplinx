@@ -276,6 +276,21 @@ pub struct AppSettings {
     pub check_updates: bool,
     pub all_time_up: i64,
     pub all_time_down: i64,
+    /// Identities of favourite servers (shown first everywhere).
+    pub favorites: Vec<String>,
+    /// Server groups folded in the list ("manual" for servers without a subscription).
+    pub collapsed_groups: Vec<String>,
+    /// Main window: x, y, width, height in physical pixels; empty = centred default.
+    pub window_rect: Vec<i32>,
+    pub window_maximized: bool,
+    pub last_page: i32,
+    /// Mini window position (physical pixels).
+    pub mini_pos: Vec<i32>,
+    pub clipboard_offer: bool,
+    pub auto_ping: bool,
+    pub auto_reconnect: bool,
+    /// System proxy mode: if the core dies, keep the proxy pointing at it so nothing leaks past the VPN.
+    pub kill_switch: bool,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -293,7 +308,9 @@ impl Default for AppSettings {
             notify_connection: true, notify_errors: true, notify_subscription: true, notify_updates: true, sub_warned_day: String::new(),
             speed_results: vec![], home_widgets: default_home_widgets(), last_seen_version: String::new(),
             hwid: uuid::Uuid::new_v4().simple().to_string()[..16].to_string(), server_sort: s("MANUAL"), mask_addresses: false, ipv6: true,
-            show_hidden: false, apply_panel_routing: true, check_updates: true, all_time_up: 0, all_time_down: 0, extra: Map::new(),
+            show_hidden: false, apply_panel_routing: true, check_updates: true, all_time_up: 0, all_time_down: 0,
+            favorites: vec![], collapsed_groups: vec![], window_rect: vec![], window_maximized: false, last_page: 0, mini_pos: vec![],
+            clipboard_offer: true, auto_ping: true, auto_reconnect: true, kill_switch: false, extra: Map::new(),
         }
     }
 }

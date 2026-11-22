@@ -311,3 +311,46 @@ fn widgets_never_overlap() {
         assert!(!(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h), "{a:?} overlaps {b:?}");
     } }
 }
+
+#[test]
+fn route_check_follows_the_rules() {
+    use crate::core::route::check;
+    let mut r = RoutingSettings { bypass_ru: false, block_ads: false, domain_strategy: "AsIs".into(), ..Default::default() };
+    let rule = |kind: &str, value: &str, action: &str| RouteRule { kind: kind.into(), value: value.into(), action: action.into(), ..Default::default() };
+    r.rules = vec![rule("DOMAIN", "example.org", "DIRECT"), rule("IP", "1.2.3.0/24", "BLOCK"), rule("PORT", "6881-6889", "BLOCK")];
+    let s = AppSettings::default();
+    assert_eq!(check("https://sub.example.org/page", &s, &r).action, "DIRECT");
+    assert_eq!(check("1.2.3.4", &s, &r).action, "BLOCK");
+    assert_eq!(check("8.8.8.8:6885", &s, &r).action, "BLOCK");
+    assert_eq!(check("192.168.1.10", &s, &r).action, "DIRECT"); // LAN preset
+    assert_eq!(check("other.net", &s, &r).action, "PROXY");
+    r.mode = "DIRECT".into();
+    assert_eq!(check("other.net", &s, &r).action, "DIRECT");
+}
+
+/// Real geo databases (set UPLINX_TEST_GEO to a folder with geosite.dat / geoip.dat): `cargo test -- --ignored`.
+#[test]
+#[ignore]
+fn route_check_with_real_geo() {
+    let dir = std::env::var("UPLINX_TEST_GEO").expect("UPLINX_TEST_GEO");
+    let home = std::env::temp_dir().join("uplinx-geo-test");
+    std::fs::create_dir_all(home.join("core")).unwrap();
+    for f in ["geosite.dat", "geoip.dat"] { std::fs::copy(std::path::Path::new(&dir).join(f), home.join("core").join(f)).unwrap(); }
+    unsafe { std::env::set_var("UPLINX_HOME", &home); }
+    let s = AppSettings::default();
+    let r = RoutingSettings { domain_strategy: "AsIs".into(), ..Default::default() }; // RU direct + ads blocked by default
+    let v = crate::core::route::check("doubleclick.net", &s, &r);
+    assert_eq!(v.action, "BLOCK", "{v:?}");
+    let v = crate::core::route::check("yandex.ru", &s, &r);
+    assert_eq!(v.action, "DIRECT", "{v:?}");
+    let v = crate::core::route::check("5.255.255.5", &s, &r); // a Yandex address (geoip:ru)
+    assert_eq!(v.action, "DIRECT", "{v:?}");
+    let v = crate::core::route::check("youtube.com", &s, &r);
+    assert_eq!(v.action, "PROXY", "{v:?}");
+}
+
+#[test]
+fn release_notes_as_plain_text() {
+    let t = crate::view::plain_notes("## Uplinx 2.0.2\n\n- **Bold** and `code`\n\n**Downloads**\n- `x.msi`");
+    assert_eq!(t, "Uplinx 2.0.2\n\n•  Bold and code");
+}

@@ -4,7 +4,7 @@ import "fonts/Unbounded.ttf";
 import "fonts/MaterialIconsRound-Regular.otf";
 import { ListView, ScrollView } from "std-widgets.slint";
 import { Shapes } from "shapes.slint";
-import { Theme, Ds, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Shape, Avatar, Field, Area, Progress, Dialog } from "theme.slint";
+import { Theme, Ds, Logo, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Shape, Avatar, Field, Area, Progress, Dialog } from "theme.slint";
 import { Ui, Logic, FieldItem } from "data.slint";
 import { Nav, ServersPage, SubsPage, RoutingPage, LogsPage, SettingsPage } from "pages.slint";
 import { HomePage, ConnectButton } from "home.slint";
@@ -22,19 +22,6 @@ component WindowButton inherits Rectangle {
     ta := TouchArea { clicked => { root.clicked(); } }
 }
 
-/** The Uplinx mark: a flat, symmetric lowercase u — the same geometry as the app icon, in the theme's colours. */
-export component Logo inherits Rectangle {
-    in property <length> size: 32px;
-    in property <brush> ink: @linear-gradient(135deg, Theme.primary 0%, Theme.tertiary 100%);
-    width: size; height: size;
-    Path {
-        width: 100%; height: 100%;
-        viewbox-width: 512; viewbox-height: 512;
-        // filled outline of the icon's u: two round-topped stems joined by a half ring
-        commands: "M 68 92 A 68 68 0 0 1 204 92 L 204 298 A 52 52 0 0 0 308 298 L 308 92 A 68 68 0 0 1 444 92 L 444 298 A 188 188 0 0 1 68 298 Z";
-        fill: root.ink;
-    }
-}
 
 component TitleBar inherits Rectangle {
     in property <bool> maximized;
@@ -105,7 +92,7 @@ component Snackbar inherits Rectangle {
             at := Text { text: Ui.message-action; color: Theme.primary; font-weight: 700; font-size: 14px; }
             TouchArea { mouse-cursor: pointer; clicked => { Logic.message-action(); } }
         }
-        IconButton { glyph: "\u{e5cd}"; tint: Theme.inverse-on-surface; clicked => { Logic.dismiss("message"); } }
+        IconButton { glyph: "\u{e5cd}"; tooltip: @tr("Close"); tint: Theme.inverse-on-surface; clicked => { Logic.dismiss("message"); } }
     }
 }
 
@@ -125,6 +112,29 @@ export component AppWindow inherits Window {
     background: Theme.surface;
     default-font-family: "Rubik";
     in property <bool> is-maximized;
+    init => { keys.focus(); }
+
+    // keyboard shortcuts: keys nobody else handled bubble up to here
+    keys := FocusScope {
+    key-pressed(e) => {
+        if e.modifiers.control {
+            if e.text == "v" || e.text == "V" { Logic.import-clipboard(); return accept; }
+            if e.text == "f" || e.text == "F" { Nav.page = 1; Nav.focus-search += 1; return accept; }
+            if e.text == "n" || e.text == "N" { Nav.dialog = "import"; return accept; }
+            if e.text == "1" { Nav.page = 0; return accept; }
+            if e.text == "2" { Nav.page = 1; return accept; }
+            if e.text == "3" { Nav.page = 2; return accept; }
+            if e.text == "4" { Nav.page = 3; return accept; }
+            if e.text == "5" { Nav.page = 4; return accept; }
+            if e.text == "6" { Nav.page = 5; return accept; }
+        }
+        if e.text == Key.Escape {
+            if Nav.dialog != "" { Nav.dialog = ""; } else if Nav.edit-layout { Nav.edit-layout = false; } else { Logic.dismiss("all"); }
+            return accept;
+        }
+        if e.text == Key.F5 { if Nav.page == 2 { Logic.update-all-subs(); } else { Logic.ping-all(); } return accept; }
+        reject
+    }
 
     VerticalLayout {
         TitleBar { maximized: root.is-maximized; }
@@ -177,10 +187,25 @@ export component AppWindow inherits Window {
         }
     }
 
-    // ---------------------------------------------------------------- snackbar
+    // ---------------------------------------------------------------- clipboard offer + snackbar
+    if Ui.clip-offer != "": Rectangle {
+        width: cl.preferred-width; height: 56px;
+        x: (root.width - self.width) / 2 + 48px;
+        y: root.height - self.height - Ds.page - (Ui.message != "" ? 52px + Ds.s2 : 0);
+        border-radius: Ds.r-m;
+        background: Theme.primary-container;
+        drop-shadow-blur: 12px; drop-shadow-color: #00000040;
+        cl := HorizontalLayout {
+            padding-left: Ds.s4; padding-right: Ds.s2; spacing: Ds.s3;
+            Icon { glyph: "\u{e14f}"; color: Theme.on-primary-container; width: 22px; }
+            Text { text: @tr("In the clipboard: {}", Ui.clip-offer); color: Theme.on-primary-container; font-size: 14px; vertical-alignment: center; }
+            VerticalLayout { alignment: center; Button { text: @tr("Add"); clicked => { Logic.clip-accept(); } } }
+            VerticalLayout { alignment: center; IconButton { glyph: "\u{e5cd}"; tooltip: @tr("Not now"); tint: Theme.on-primary-container; clicked => { Logic.clip-dismiss(); } } }
+        }
+    }
     if Ui.message != "": Snackbar {
         x: (root.width - self.width) / 2 + 48px;
-        y: root.height - self.height - 24px;
+        y: root.height - self.height - Ds.page;
     }
 
     // ---------------------------------------------------------------- dialogs
@@ -204,7 +229,7 @@ export component AppWindow inherits Window {
     if Nav.dialog == "add-sub": Dialog {
         title: @tr("Add subscription"); glyph: "\u{eb5a}";
         dismiss => { Nav.dialog = ""; }
-        url := Field { label: @tr("Subscription URL"); placeholder: "https://"; }
+        url := Field { label: @tr("Subscription URL"); placeholder: "https://"; accepted(t) => { if t != "" { Logic.add-sub(name.text, t); Nav.dialog = ""; } } }
         name := Field { label: @tr("Name (optional)"); }
         Actions {
             Button { kind: 3; text: @tr("Cancel"); clicked => { Nav.dialog = ""; } }
@@ -231,6 +256,7 @@ export component AppWindow inherits Window {
         Segmented { options: [@tr("Domain"), "IP", "geosite", "geoip", @tr("Process"), @tr("Port")]; index: Nav.b == "IP" ? 1 : (Nav.b == "GEOSITE" ? 2 : (Nav.b == "GEOIP" ? 3 : (Nav.b == "PROCESS" ? 4 : (Nav.b == "PORT" ? 5 : 0)))); picked(i) => { Nav.b = ["DOMAIN", "IP", "GEOSITE", "GEOIP", "PROCESS", "PORT"][i]; } }
         rv := Field {
             label: @tr("Value");
+            accepted(t) => { if t != "" { Logic.save-rule(Nav.a, Nav.b, t, Nav.d); Nav.dialog = ""; } }
             text: Nav.c;
             placeholder: Nav.b == "DOMAIN" ? "example.com" : (Nav.b == "IP" ? "1.2.3.0/24" : (Nav.b == "GEOSITE" ? "category-ads-all" : (Nav.b == "GEOIP" ? "ru" : (Nav.b == "PROCESS" ? "telegram.exe" : "443, 6881-6889"))));
         }
@@ -270,7 +296,7 @@ export component AppWindow inherits Window {
     if Nav.dialog == "update" || (Ui.update-ready && Nav.dialog == "update"): Dialog {
         title: @tr("Version {} is available", Ui.update-version); glyph: "\u{e923}"; card-width: 600px;
         dismiss => { Nav.dialog = ""; }
-        ScrollView { height: 240px; Text { width: parent.width - 16px; text: Ui.update-notes; font-size: 13px; color: Theme.on-surface; wrap: word-wrap; } }
+        ScrollView { height: 240px; VerticalLayout { padding-right: Ds.s3; Text { text: Ui.update-notes; font-size: 13px; color: Theme.on-surface; wrap: word-wrap; } } }
         if Ui.update-progress >= 0: Progress { value: Ui.update-progress; }
         Actions {
             Button { kind: 3; text: @tr("Later"); clicked => { Logic.dismiss-update(); Nav.dialog = ""; } }
@@ -280,9 +306,9 @@ export component AppWindow inherits Window {
     }
 
     if Ui.whats-new: Dialog {
-        title: @tr("What's new in {}", Ui.whats-new-version); glyph: "\u{e8f2}"; card-width: 600px;
+        title: @tr("What's new in {}", Ui.whats-new-version); glyph: "\u{e031}"; card-width: 600px;
         dismiss => { Logic.dismiss("whats-new"); }
-        ScrollView { height: 260px; Text { width: parent.width - 16px; text: Ui.whats-new-notes; font-size: 13px; color: Theme.on-surface; wrap: word-wrap; } }
+        ScrollView { height: 260px; VerticalLayout { padding-right: Ds.s3; Text { text: Ui.whats-new-notes; font-size: 13px; color: Theme.on-surface; wrap: word-wrap; } } }
         Actions { Button { text: @tr("Great"); clicked => { Logic.dismiss("whats-new"); } } }
     }
 
@@ -354,6 +380,23 @@ export component AppWindow inherits Window {
             Button { text: @tr("Save"); clicked => { Logic.editor-save(fields); } }
         }
     }
+
+    // ---------------------------------------------------------------- drag & drop
+    if Ui.drop-hover: Rectangle {
+        background: Theme.surface.with-alpha(0.85);
+        Rectangle {
+            x: Ds.page; y: Ds.page; width: parent.width - 2 * Ds.page; height: parent.height - 2 * Ds.page;
+            border-radius: Ds.r-xl; border-width: 2px; border-color: Theme.primary;
+            background: Theme.primary.with-alpha(0.06);
+            VerticalLayout {
+                alignment: center; spacing: Ds.s3;
+                Icon { glyph: "\u{e2c6}"; font-size: 56px; color: Theme.primary; }
+                Text { text: @tr("Drop to import"); font-family: "Unbounded"; font-weight: 600; font-size: 22px; color: Theme.on-surface; horizontal-alignment: center; }
+                Text { text: @tr("Configs, subscriptions and QR code pictures"); font-size: 14px; color: Theme.on-surface-variant; horizontal-alignment: center; }
+            }
+        }
+    }
+    } // keys
 }
 
 /** Compact always-on-top window: connect button, server and speed. */
@@ -378,7 +421,7 @@ export component MiniWindow inherits Window {
         }
         VerticalLayout {
             alignment: start;
-            IconButton { width: 32px; height: 32px; glyph: "\u{e5d0}"; clicked => { Logic.toggle-mini(); } }
+            IconButton { width: 32px; height: 32px; glyph: "\u{e5d0}"; tooltip: @tr("Open the main window"); clicked => { Logic.toggle-mini(); } }
         }
     }
 }

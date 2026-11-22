@@ -1,5 +1,5 @@
 // Home: a dashboard of widgets on a 12-column grid. In edit mode widgets can be dragged, resized, added and removed.
-import { Theme, Ds, Icon, IconButton, Button, Chip, Segmented, Card, Label, Shape, Avatar, Progress, Spark } from "theme.slint";
+import { Theme, Ds, Logo, Field, Icon, IconButton, Button, Chip, Segmented, Card, Label, Shape, Avatar, Progress, Spark } from "theme.slint";
 import { Ui, Logic, WidgetItem, NodeItem } from "data.slint";
 import { Shapes } from "shapes.slint";
 import { Nav, PingChip } from "pages.slint";
@@ -82,7 +82,7 @@ component ServerW inherits Rectangle {
                 Text { text: Ui.server-name; font-size: 16px; font-weight: 600; color: Theme.on-surface; overflow: elide; }
                 Text { text: Ui.server-detail; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; }
             }
-            VerticalLayout { alignment: center; IconButton { glyph: "\u{e5cc}"; clicked => { Nav.page = 1; } } }
+            VerticalLayout { alignment: center; IconButton { glyph: "\u{e5cc}"; tooltip: @tr("All servers"); clicked => { Nav.page = 1; } } }
         }
     }
 }
@@ -104,7 +104,8 @@ component SpeedW inherits Rectangle {
             HorizontalLayout { spacing: 4px; Icon { glyph: "\u{f090}"; font-size: 18px; color: Theme.primary; width: 18px; } Big { text: Ui.down-speed; font-size: 20px; } }
             HorizontalLayout { spacing: 4px; Icon { glyph: "\u{f09b}"; font-size: 18px; color: Theme.tertiary; width: 18px; } Big { text: Ui.up-speed; font-size: 20px; } }
         }
-        Rectangle {
+        if Ui.status != 2: Text { vertical-stretch: 1; text: @tr("Connect to see the live speed"); font-size: 13px; color: Theme.on-surface-variant; horizontal-alignment: center; vertical-alignment: center; wrap: word-wrap; }
+        if Ui.status == 2: Rectangle {
             vertical-stretch: 1;
             Spark { width: 100%; height: 100%; values: Ui.speed-down-values; }
             Spark { width: 100%; height: 50%; y: parent.height / 2; values: Ui.speed-up-values; tint: Theme.tertiary; alpha: 0.8; }
@@ -115,17 +116,18 @@ component SpeedW inherits Rectangle {
 component PingW inherits Rectangle {
     VerticalLayout {
         padding: Ds.card; spacing: Ds.s2;
-        Head { glyph: "\u{e1d8}"; title: @tr("Ping"); IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; clicked => { Logic.ping-current(); } } }
+        Head { glyph: "\u{e1d8}"; title: @tr("Ping"); IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; tooltip: @tr("Measure now"); clicked => { Logic.ping-current(); } } }
         Big { text: Ui.ping-now; font-size: 22px; }
         if Ui.ping-stats != "": Text { text: Ui.ping-stats; font-size: 11px; color: Theme.on-surface-variant; overflow: elide; }
-        Spark { vertical-stretch: 1; values: Ui.ping-values; tint: Theme.secondary; }
+        if Ui.ping-values.length >= 2: Spark { vertical-stretch: 1; values: Ui.ping-values; tint: Theme.secondary; }
+        if Ui.ping-values.length < 2: Text { vertical-stretch: 1; text: Ui.status == 2 ? @tr("Measuring…") : @tr("The chart appears after connecting"); font-size: 12px; color: Theme.on-surface-variant; vertical-alignment: center; wrap: word-wrap; }
     }
 }
 
 component IpW inherits Rectangle {
     VerticalLayout {
         padding: Ds.card; spacing: Ds.s2;
-        Head { glyph: "\u{e80b}"; title: @tr("Your IP"); IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; enabled: !Ui.ip-loading; clicked => { Logic.refresh-ip(); } } }
+        Head { glyph: "\u{e80b}"; title: @tr("Your IP"); IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; tooltip: @tr("Refresh"); enabled: !Ui.ip-loading; clicked => { Logic.refresh-ip(); } } }
         Big { text: Ui.ip-loading ? "…" : (Ui.ip == "" ? "—" : Ui.ip); font-size: 18px; }
         HorizontalLayout {
             spacing: 6px;
@@ -150,7 +152,7 @@ component QuotaW inherits Rectangle {
 component ServersW inherits Rectangle {
     VerticalLayout {
         padding: Ds.card; spacing: Ds.s2;
-        Head { glyph: "\u{e8ee}"; title: @tr("Servers"); IconButton { width: 32px; height: 32px; glyph: "\u{e9e4}"; enabled: !Ui.pinging; clicked => { Logic.ping-all(); } } }
+        Head { glyph: "\u{e8ee}"; title: @tr("Servers"); IconButton { width: 32px; height: 32px; glyph: "\u{e9e4}"; tooltip: @tr("Test all"); enabled: !Ui.pinging; clicked => { Logic.ping-all(); } } }
         Flickable {
             vertical-stretch: 1;
             content-height: list.preferred-height;
@@ -189,8 +191,8 @@ component SitesW inherits Rectangle {
         padding: Ds.card; spacing: Ds.s2;
         Head {
             glyph: "\u{e8be}"; title: @tr("Sites");
-            IconButton { width: 32px; height: 32px; glyph: "\u{e3c9}"; clicked => { Nav.c = Ui.sites-text; Nav.dialog = "sites"; } }
-            IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; enabled: !Ui.sites-checking; clicked => { Logic.check-sites(); } }
+            IconButton { width: 32px; height: 32px; glyph: "\u{e3c9}"; tooltip: @tr("Edit the list"); clicked => { Nav.c = Ui.sites-text; Nav.dialog = "sites"; } }
+            IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; tooltip: @tr("Check now"); enabled: !Ui.sites-checking; clicked => { Logic.check-sites(); } }
         }
         Flickable {
             vertical-stretch: 1;
@@ -344,7 +346,40 @@ export component HomePage inherits Rectangle {
     Shape { x: root.width - 260px; y: -80px; width: 360px; height: 360px; shape: Shapes.soft-burst; fill: Theme.primary.with-alpha(0.05); transform-rotation: root.drift; }
     Shape { x: -120px; y: root.height - 240px; width: 320px; height: 320px; shape: Shapes.clover4; fill: Theme.tertiary.with-alpha(0.05); transform-rotation: -root.drift; }
 
-    VerticalLayout {
+    if !Ui.has-servers: VerticalLayout {
+        alignment: center; padding: Ds.page;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: min(600px, root.width - 2 * Ds.page);
+                height: ob.preferred-height;
+                border-radius: Ds.r-xl;
+                background: Theme.surface-container;
+                ob := VerticalLayout {
+                    padding: Ds.s5 * 1.5; spacing: Ds.s4;
+                    HorizontalLayout { alignment: center; Rectangle {
+                        width: 80px; height: 80px; border-radius: Ds.r-l; background: Theme.primary-container;
+                        Logo { size: 48px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; ink: Theme.on-primary-container; }
+                    } }
+                    Text { text: @tr("Welcome to Uplinx"); font-family: "Unbounded"; font-weight: 600; font-size: 24px; color: Theme.on-surface; horizontal-alignment: center; }
+                    Text { text: @tr("Paste the subscription link from your VPN provider — or any server link, config or QR code."); font-size: 14px; color: Theme.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
+                    HorizontalLayout {
+                        spacing: Ds.s2;
+                        first := Field { label: @tr("Subscription or link"); placeholder: "https://…  ·  vless://…"; horizontal-stretch: 1; accepted(t) => { if Logic.import-text(t) > 0 { self.text = ""; } } }
+                        VerticalLayout { alignment: center; Button { glyph: "\u{e145}"; text: @tr("Add"); enabled: first.text != ""; clicked => { if Logic.import-text(first.text) > 0 { first.text = ""; } } } }
+                    }
+                    HorizontalLayout {
+                        alignment: center; spacing: Ds.s2;
+                        Button { kind: 2; glyph: "\u{e14f}"; text: @tr("From clipboard"); clicked => { Logic.import-clipboard(); } }
+                        Button { kind: 2; glyph: "\u{ef6b}"; text: @tr("QR on screen"); clicked => { Logic.scan-screen(); } }
+                        Button { kind: 2; glyph: "\u{e2c7}"; text: @tr("File"); clicked => { Logic.import-file(); } }
+                    }
+                    Text { text: @tr("Tip: you can also drop files onto this window or press Ctrl+V."); font-size: 12px; color: Theme.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
+                }
+            }
+        }
+    }
+    if Ui.has-servers: VerticalLayout {
         HorizontalLayout {
             padding-left: root.pad; padding-right: root.pad; padding-top: Ds.page; padding-bottom: Ds.s4; spacing: Ds.s2; height: 80px;
             Text { text: Nav.edit-layout ? @tr("Drag widgets, pull the corner to resize") : ""; font-size: 13px; color: Theme.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }

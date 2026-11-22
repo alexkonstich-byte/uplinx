@@ -1,6 +1,6 @@
 [package]
 name = "uplinx"
-version = "2.0.2"
+version = "2.1.0"
 edition = "2024"
 description = "Uplinx Client"
 license = "MIT"
@@ -23,6 +23,7 @@ ureq = "3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 arboard = { version = "3", default-features = false, features = ["windows-sys", "image-data"] }
 rqrr = "0.9"
+regex-lite = "0.1"
 qrcode = { version = "0.14", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp"] }
 windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_UI_Controls_Dialogs"] }

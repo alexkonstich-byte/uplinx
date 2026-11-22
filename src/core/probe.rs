@@ -36,6 +36,9 @@ pub fn targets(n: &ProxyNode, s: &AppSettings) -> Vec<Target> {
 
 static PHYSICAL: Mutex<Option<(Instant, Option<String>)>> = Mutex::new(None);
 
+/// Same as [physical_interface] but never from the cache (after a network change).
+pub fn physical_interface_fresh() -> Option<String> { *PHYSICAL.lock().unwrap() = None; physical_interface() }
+
 /// Adapter carrying the default route, skipping VPN/TUN adapters. Cached for a minute.
 pub fn physical_interface() -> Option<String> {
     if let Some((t, name)) = PHYSICAL.lock().unwrap().as_ref() { if t.elapsed() < Duration::from_secs(60) { return name.clone(); } }

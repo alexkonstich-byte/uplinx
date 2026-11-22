@@ -4,6 +4,7 @@ pub mod awg;
 pub mod errors;
 pub mod ping;
 pub mod probe;
+pub mod route;
 pub mod subs;
 pub mod sysproxy;
 pub mod update;

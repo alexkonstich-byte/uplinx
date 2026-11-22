@@ -39,6 +39,12 @@ struct Shell {
     msg: RefCell<Option<(app::Msg, Instant)>>,
     last_rev: std::cell::Cell<u64>,
     hidden: std::cell::Cell<bool>,
+    /// Clipboard text offered for import, and the last text already looked at (never offered twice).
+    clip: RefCell<Option<String>>,
+    clip_seen: RefCell<String>,
+    /// Files dropped on the window, imported together.
+    drops: RefCell<Vec<std::path::PathBuf>>,
+    page: std::cell::Cell<i32>,
 }
 
 impl Shell {
@@ -52,19 +58,82 @@ impl Shell {
     }
 
     fn hide_to_tray(&self) {
+        self.save_geometry();
         let _ = self.w.hide();
         self.hidden.set(true);
         win::trim_memory();
     }
 
     fn quit(&self) {
+        self.save_geometry();
         self.app.shutdown();
         win::tray_remove();
         let _ = slint::quit_event_loop();
     }
 
-    fn tray_labels(&self) -> [String; 3] {
-        [t!("Show"), if self.app.is_connected() { t!("Disconnect") } else { t!("Connect") }, t!("Quit")]
+    fn tray_menu(&self) -> win::TrayMenu {
+        let st = self.app.snapshot();
+        let pings = self.app.pings.lock().unwrap().clone();
+        let sel = st.selected_node().map(|n| n.id.clone()).unwrap_or_default();
+        let mut nodes: Vec<&model::ProxyNode> = st.nodes.iter().filter(|n| !st.hidden.contains(&n.identity())).collect();
+        let ping = |n: &model::ProxyNode| pings.get(&n.id).copied().filter(|&p| p >= 0).unwrap_or(i32::MAX);
+        nodes.sort_by_key(|n| (!st.settings.favorites.contains(&n.identity()), ping(n)));
+        let servers = nodes.iter().take(25).map(|n| {
+            let p = ping(n);
+            let name = view::split_flag(&n.name).1;
+            (n.id.clone(), if p < i32::MAX { format!("{name}\t{p} ms") } else { name }, n.id == sel)
+        }).collect();
+        win::TrayMenu {
+            connected: self.app.is_connected(), servers, connect_mode: st.settings.connect_mode.clone(), routing_mode: st.routing.mode.clone(),
+            labels: vec![t!("Show"), if self.app.is_connected() { t!("Disconnect") } else { t!("Connect") }, t!("Connect to the fastest"),
+                t!("Servers"), t!("Mode"), t!("System proxy"), "TUN".into(), t!("By rules"), t!("Global"), t!("Direct"), t!("Quit")],
+        }
+    }
+
+    /// Remembers where the windows were, so they open there next time.
+    fn save_geometry(&self) {
+        let win = self.w.window();
+        let mut rect = None;
+        let maximized = win.is_maximized();
+        if win.is_visible() && !maximized && !win.is_minimized() {
+            let (p, z) = (win.position(), win.size());
+            rect = Some(vec![p.x, p.y, z.width as i32, z.height as i32]);
+        }
+        let mini = self.mini.window().is_visible().then(|| { let p = self.mini.window().position(); vec![p.x, p.y] });
+        let st = self.app.settings();
+        let changed = rect.as_ref().is_some_and(|r| *r != st.window_rect) || (win.is_visible() && maximized != st.window_maximized)
+            || mini.as_ref().is_some_and(|m| *m != st.mini_pos);
+        if changed {
+            self.app.edit(|s| {
+                if let Some(r) = rect { s.settings.window_rect = r; }
+                if win.is_visible() { s.settings.window_maximized = maximized; }
+                if let Some(m) = mini { s.settings.mini_pos = m; }
+            });
+        }
+    }
+
+    fn restore_geometry(&self) {
+        let st = self.app.settings();
+        let (vx, vy, vw, vh) = win::virtual_screen();
+        let on_screen = |x: i32, y: i32| x > vx - 100 && y >= vy - 10 && x < vx + vw - 100 && y < vy + vh - 60;
+        if let [x, y, w, h] = st.window_rect[..] {
+            if on_screen(x, y) && w >= 600 && h >= 400 {
+                self.w.window().set_size(slint::PhysicalSize::new(w as u32, h as u32));
+                self.w.window().set_position(slint::PhysicalPosition::new(x, y));
+            }
+        }
+        if let [x, y] = st.mini_pos[..] { if on_screen(x, y) { self.mini.window().set_position(slint::PhysicalPosition::new(x, y)); } }
+    }
+
+    /// When the window gets focus: offer what's new in the clipboard (once per clipboard content).
+    fn check_clipboard(&self) {
+        if !self.app.settings().clipboard_offer { return; }
+        let Some(text) = win::clipboard_text() else { return };
+        if *self.clip_seen.borrow() == text { return; }
+        *self.clip_seen.borrow_mut() = text.clone();
+        let offer = self.app.clipboard_offer(&text);
+        self.w.global::<Ui>().set_clip_offer(offer.clone().unwrap_or_default().into());
+        *self.clip.borrow_mut() = offer.map(|_| text);
     }
 
     fn tick(&self) {
@@ -78,8 +147,10 @@ impl Shell {
             for (title, text, err) in self.app.toasts.lock().unwrap().drain(..) { win::notify(&title, &text, err); }
             let ui = self.w.global::<Ui>();
             let tip = format!("Uplinx — {}", ui.get_status_text());
-            win::tray_update(&tip, self.tray_labels(), self.app.is_connected());
+            win::tray_update(&tip);
         }
+        let page = self.w.global::<Nav>().get_page();
+        if page != self.page.get() { self.page.set(page); self.app.edit(|s| s.settings.last_page = page); }
         // snackbar: one message at a time, 5 s each
         let mut cur = self.msg.borrow_mut();
         if cur.as_ref().is_some_and(|(_, t)| t.elapsed() > Duration::from_secs(5)) { *cur = None; self.set_msg(None); }
@@ -119,19 +190,28 @@ fn main() -> anyhow::Result<()> {
     w.global::<Ui>().set_app_version(core::update::VERSION.into());
 
     let sh = Rc::new(Shell { w: w.clone_strong(), mini: mini.clone_strong(), app: app.clone(), view: Default::default(), msg: Default::default(),
-        last_rev: Default::default(), hidden: Default::default() });
+        last_rev: Default::default(), hidden: Default::default(), clip: Default::default(), clip_seen: Default::default(),
+        drops: Default::default(), page: std::cell::Cell::new(st.settings.last_page) });
+    w.global::<Nav>().set_page(st.settings.last_page.clamp(0, 5));
+    sh.restore_geometry();
 
     wire(&sh);
 
     // tray + notifications
     {
         let s = Rc::downgrade(&sh);
-        win::tray_create("Uplinx", sh.tray_labels(), move |e| {
+        let m = Rc::downgrade(&sh);
+        win::tray_create("Uplinx", move || m.upgrade().map(|s| s.tray_menu()).unwrap_or(win::TrayMenu {
+            connected: false, servers: vec![], connect_mode: String::new(), routing_mode: String::new(), labels: vec![] }), move |e| {
             let Some(s) = s.upgrade() else { return };
             match e {
                 win::TrayEvent::Show => s.show_main(),
                 win::TrayEvent::Toggle => s.app.toggle(),
                 win::TrayEvent::Quit => s.quit(),
+                win::TrayEvent::Fastest => s.app.connect_fastest(),
+                win::TrayEvent::Select(id) => s.app.select(&id),
+                win::TrayEvent::ConnectMode(m) => s.app.set_connect_mode(m),
+                win::TrayEvent::RoutingMode(m) => s.app.set_routing_mode(m),
             }
         });
     }
@@ -154,9 +234,30 @@ fn main() -> anyhow::Result<()> {
 
     // motion only while the window is focused: no idle animations eat CPU in the background
     {
-        let weak = w.as_weak();
+        let s = Rc::downgrade(&sh);
         w.window().on_winit_window_event(move |_, e| {
-            if let WindowEvent::Focused(f) = e { if let Some(w) = weak.upgrade() { w.global::<Theme>().set_motion(*f); } }
+            let Some(s) = s.upgrade() else { return EventResult::Propagate };
+            let ui = s.w.global::<Ui>();
+            match e {
+                WindowEvent::Focused(f) => {
+                    s.w.global::<Theme>().set_motion(*f);
+                    if *f { s.check_clipboard(); }
+                }
+                // files dragged in from Explorer: configs, subscriptions in text files, QR pictures
+                WindowEvent::HoveredFile(_) => ui.set_drop_hover(true),
+                WindowEvent::HoveredFileCancelled => ui.set_drop_hover(false),
+                WindowEvent::DroppedFile(path) => {
+                    ui.set_drop_hover(false);
+                    s.drops.borrow_mut().push(path.clone());
+                    let weak = Rc::downgrade(&s);
+                    slint::Timer::single_shot(Duration::from_millis(150), move || {
+                        let Some(s) = weak.upgrade() else { return };
+                        let files: Vec<_> = s.drops.borrow_mut().drain(..).collect();
+                        if !files.is_empty() { let a = s.app.clone(); std::thread::spawn(move || a.import_files(files)); }
+                    });
+                }
+                _ => {}
+            }
             EventResult::Propagate
         });
         let weak = mini.as_weak();
@@ -181,7 +282,11 @@ fn main() -> anyhow::Result<()> {
 
     if let Some(p) = args.iter().find_map(|a| a.strip_prefix("--page=")).and_then(|p| p.parse().ok()) { w.global::<Nav>().set_page(p); }
     if args.iter().any(|a| a == "--connect") || st.settings.auto_connect { app.connect(); }
-    if args.iter().any(|a| a == "--minimized") { sh.hidden.set(true); } else { w.show()?; }
+    if args.iter().any(|a| a == "--minimized") { sh.hidden.set(true); } else {
+        w.show()?;
+        if st.settings.window_maximized { w.window().set_maximized(true); w.set_is_maximized(true); }
+        sh.check_clipboard(); // opened right after copying a link: offer it at once
+    }
     sh.tick();
     slint::run_event_loop_until_quit()?;
     app.shutdown();
@@ -203,7 +308,7 @@ fn wire(sh: &Rc<Shell>) {
     on!(on_toggle_maximize, |s| { let m = !s.w.window().is_maximized(); s.w.window().set_maximized(m); s.w.set_is_maximized(m); });
     on!(on_close, |s| { if s.app.settings().minimize_to_tray { s.hide_to_tray(); } else { s.quit(); } });
     on!(on_drag, |s| { s.w.window().with_winit_window(|w| { let _ = w.drag_window(); }); });
-    on!(on_toggle_mini, |s| { s.hide_to_tray(); let _ = s.mini.show(); s.last_rev.set(0); });
+    on!(on_toggle_mini, |s| { s.hide_to_tray(); s.restore_geometry(); let _ = s.mini.show(); s.last_rev.set(0); });
     on!(on_open_url, |s, url| win::open_url(&url));
     on!(on_copy, |s, text| { win::set_clipboard(&text); s.app.notify(t!("Copied"), None); });
     on!(on_open_data_folder, |s| win::open_url(&state::home().to_string_lossy()));
@@ -220,11 +325,41 @@ fn wire(sh: &Rc<Shell>) {
     on!(on_ping_current, |s| s.app.ping_current());
     on!(on_search, |s, q| { s.view.borrow_mut().search = q.to_string(); s.app.bump(); });
     on!(on_set_sort, |s, i| s.app.update_settings(|x| x.server_sort = ["MANUAL", "NAME", "PING", "RECENT"][i.clamp(0, 3) as usize].into()));
-    on!(on_toggle_group, |s, _id| {});
+    on!(on_toggle_group, |s, id| s.app.toggle_group(&id));
+    on!(on_connect_fastest, |s| s.app.connect_fastest());
+    on!(on_clip_accept, |s| {
+        if let Some(text) = s.clip.borrow_mut().take() { s.app.import_text(&text, None); }
+        s.w.global::<Ui>().set_clip_offer("".into());
+    });
+    on!(on_clip_dismiss, |s| { s.clip.borrow_mut().take(); s.w.global::<Ui>().set_clip_offer("".into()); });
+    on!(on_route_check, |s, text| {
+        let ui = s.w.global::<Ui>();
+        ui.set_route_checking(true);
+        let (a, weak, text) = (s.app.clone(), s.w.as_weak(), text.to_string());
+        std::thread::spawn(move || {
+            let v = a.route_check(&text); // may resolve the name: off the UI thread
+            let _ = weak.upgrade_in_event_loop(move |w| {
+                let ui = w.global::<Ui>();
+                ui.set_route_action(v.action.into());
+                ui.set_route_reason(v.reason.into());
+                ui.set_route_checking(false);
+            });
+        });
+    });
+    on!(on_export_logs, |s| {
+        let text = s.app.core.logs.lock().unwrap().iter().map(|l| format!("{} {}", l.level, l.text)).collect::<Vec<_>>().join("\r\n");
+        let (a, title) = (s.app.clone(), t!("Save logs"));
+        std::thread::spawn(move || if let Some(p) = win::save_file(&title, "uplinx-log.txt") {
+            match std::fs::write(&p, text) { Ok(()) => a.notify(t!("Saved"), None), Err(e) => a.notify(t!("Error: %1", e), None) }
+        });
+    });
+    on!(on_set_log_search, |s, q| { s.view.borrow_mut().log_search = q.to_string(); s.app.bump(); });
+    on!(on_set_logs_paused, |s, v| { s.view.borrow_mut().logs_paused = v; s.w.global::<Ui>().set_logs_paused(v); s.app.bump(); });
     on!(on_node_menu, |s, id, action| {
         let node = s.app.snapshot().nodes.into_iter().find(|n| n.id == id.as_str());
         match action.as_str() {
             "copy" => s.app.copy_link(&id),
+            "fav" | "unfav" => s.app.toggle_favorite(&id),
             "delete" => s.app.delete_node(&id),
             "hide" => s.app.set_hidden(&id, true),
             "unhide" => s.app.set_hidden(&id, false),
@@ -320,7 +455,8 @@ fn wire(sh: &Rc<Shell>) {
             "apply-panel-routing" => x.apply_panel_routing = v, "minimize-to-tray" => x.minimize_to_tray = v, "auto-connect" => x.auto_connect = v,
             "check-updates" => x.check_updates = v, "notify-connection" => x.notify_connection = v, "notify-errors" => x.notify_errors = v,
             "notify-subscription" => x.notify_subscription = v, "notify-updates" => x.notify_updates = v, "mask-addresses" => x.mask_addresses = v,
-            "show-hidden" => x.show_hidden = v, _ => {}
+            "show-hidden" => x.show_hidden = v, "clipboard-offer" => x.clipboard_offer = v, "auto-ping" => x.auto_ping = v,
+            "auto-reconnect" => x.auto_reconnect = v, "kill-switch" => x.kill_switch = v, _ => {}
         }),
     });
     on!(on_set_int, |s, key, i| {
@@ -401,6 +537,13 @@ fn wire(sh: &Rc<Shell>) {
             "whats-new" => { *s.app.whats_new.lock().unwrap() = None; s.app.bump(); }
             "qr" => ui.set_show_qr(false),
             "editor" => { ui.set_show_editor(false); s.view.borrow_mut().editing = None; }
+            "all" => {
+                for f in [&s.app.flags.show_error, &s.app.flags.need_admin, &s.app.flags.need_amnezia] { f.store(false, Relaxed); }
+                *s.app.whats_new.lock().unwrap() = None;
+                ui.set_show_qr(false); ui.set_show_editor(false); ui.set_clip_offer("".into());
+                s.msg.borrow_mut().take(); s.set_msg(None);
+                s.app.bump();
+            }
             _ => {}
         }
     });
@@ -408,7 +551,7 @@ fn wire(sh: &Rc<Shell>) {
     // ---- mini window
     let ml = sh.mini.global::<Logic>();
     { let a = sh.app.clone(); ml.on_toggle_connect(move || a.toggle()); }
-    { let weak = Rc::downgrade(sh); ml.on_toggle_mini(move || if let Some(s) = weak.upgrade() { s.show_main(); }); }
+    { let weak = Rc::downgrade(sh); ml.on_toggle_mini(move || if let Some(s) = weak.upgrade() { s.save_geometry(); s.show_main(); }); }
     { let weak = sh.mini.as_weak(); ml.on_drag(move || if let Some(m) = weak.upgrade() { m.window().with_winit_window(|w| { let _ = w.drag_window(); }); }); }
     let _ = Action::Reconnect;
 }

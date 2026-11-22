@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 pub const PING_TESTING: i32 = -2;
 
 #[derive(Clone, Debug)]
-pub enum Action { Undo(Box<AppState>), Reconnect, ErrorDetails, RestartUpdate, UndoRouting(Box<RoutingSettings>) }
+pub enum Action { Undo(Box<AppState>), Reconnect, ErrorDetails, RestartUpdate, UndoRouting(Box<RoutingSettings>), Disconnect }
 
 #[derive(Clone, Debug)]
 pub struct Msg { pub text: String, pub action: Option<(String, Action)> }
@@ -46,6 +46,11 @@ pub struct App {
     pub pending_import: Mutex<Option<(String, String)>>,
     pub flags: Flags,
     core_ver: Mutex<String>,
+    /// The user wants to be connected (cleared only by Disconnect): drives automatic reconnects.
+    want_connected: AtomicBool,
+    reconnects: std::sync::atomic::AtomicU32,
+    /// Physical adapter at the time a TUN connection was made; a change means a new network.
+    tun_iface: Mutex<Option<String>>,
     pub rev: AtomicU64,
     dirty: AtomicBool,
     running_sig: Mutex<Option<String>>,
@@ -70,6 +75,7 @@ impl App {
             update_ready: Default::default(), whats_new: Default::default(), pending_import: Default::default(), flags: Flags::default(), core_ver: Default::default(),
             rev: AtomicU64::new(1), dirty: AtomicBool::new(false), running_sig: Default::default(), connect_lock: Mutex::new(()),
             ping_cancel: Mutex::new(Arc::new(AtomicBool::new(false))), awg_stats: Default::default(),
+            want_connected: AtomicBool::new(false), reconnects: Default::default(), tun_iface: Default::default(),
         });
         app.clone().start_background();
         app
@@ -117,6 +123,7 @@ impl App {
     }
 
     fn start_background(self: Arc<Self>) {
+        self.clone().watch_network();
         let me = self.clone();
         spawn(move || me.read_core_version());
         // "What's new" once after an update
@@ -136,10 +143,18 @@ impl App {
             let (mut pend_up, mut pend_down) = (0u64, 0u64);
             let mut was_connected = false;
             let mut last_traffic_rev = (0u64, 0u64, 0usize);
+            let mut last_tick = Instant::now();
             loop {
                 std::thread::sleep(Duration::from_millis(500));
                 if me.flags.quit.load(Relaxed) { break; }
                 if me.core.check_alive() { me.on_core_died(); }
+                if let Status::Running(t0) = me.status() { if now_ms() - t0 > 60_000 { me.reconnects.store(0, Relaxed); } }
+                let slept = last_tick.elapsed() > Duration::from_secs(30);
+                last_tick = Instant::now();
+                if slept && me.is_connected() && me.settings().connect_mode == "TUN" && me.settings().auto_reconnect {
+                    me.core.log('I', "Resumed from sleep: reconnecting the TUN tunnel");
+                    me.reconnect();
+                }
                 let connected = me.is_connected();
                 if connected != was_connected {
                     was_connected = connected;
@@ -200,6 +215,26 @@ impl App {
         });
     }
 
+    /// TUN routes belong to one network: when Windows switches to another (Wi-Fi ↔ cable, new hotspot), reconnect.
+    fn watch_network(self: Arc<Self>) {
+        spawn(move || loop {
+            #[link(name = "iphlpapi")]
+            unsafe extern "system" { fn NotifyAddrChange(handle: *mut std::ffi::c_void, overlapped: *const std::ffi::c_void) -> u32; }
+            unsafe { NotifyAddrChange(std::ptr::null_mut(), std::ptr::null()); } // blocks until addresses change
+            if self.flags.quit.load(Relaxed) { break; }
+            let s = self.settings();
+            let Status::Running(t0) = self.status() else { continue };
+            if s.connect_mode != "TUN" || !s.auto_reconnect || now_ms() - t0 < 15_000 { continue; } // our own adapter appearing
+            std::thread::sleep(Duration::from_secs(3));
+            let now = probe::physical_interface_fresh();
+            let before = self.tun_iface.lock().unwrap().clone();
+            if now.is_some() && now != before && self.is_connected() {
+                self.notify(t!("Network changed — reconnecting"), None);
+                self.reconnect();
+            }
+        });
+    }
+
     fn has_widget(&self, kind: &str) -> bool { self.state.lock().unwrap().settings.home_widgets.iter().any(|w| w.kind == kind) }
 
     fn check_subscription_warnings(&self) {
@@ -228,9 +263,14 @@ impl App {
         }
     }
 
-    pub fn connect(self: &Arc<Self>) { let me = self.clone(); spawn(move || { let _g = me.connect_lock.lock().unwrap(); me.connect_inner(); }); }
+    pub fn connect(self: &Arc<Self>) {
+        self.want_connected.store(true, Relaxed);
+        self.reconnects.store(0, Relaxed);
+        let me = self.clone();
+        spawn(move || { let _g = me.connect_lock.lock().unwrap(); me.connect_inner(false); });
+    }
 
-    fn connect_inner(&self) {
+    fn connect_inner(&self, retry: bool) {
         let st = self.snapshot();
         let Some(node) = st.selected_node().cloned() else { self.notify(t!("Add a server or a subscription first"), None); return };
         if let Some(sub) = st.subscriptions.iter().find(|s| Some(&s.id) == node.subscription_id.as_ref()) {
@@ -268,8 +308,15 @@ impl App {
         })();
         match r {
             Ok(cfg) => { *self.running_sig.lock().unwrap() = Some(cfg); self.after_connect(&node, &st.settings); }
-            Err(e) => { *self.running_sig.lock().unwrap() = None; sysproxy::restore(); self.core.stop(); self.fail(&e.to_string()); }
+            Err(e) => {
+                *self.running_sig.lock().unwrap() = None;
+                // kill switch: while retrying, the proxy keeps pointing at the dead core so nothing goes around the VPN
+                if !(retry && st.settings.kill_switch && !tun) { sysproxy::restore(); }
+                self.core.stop();
+                if retry { self.core.log('E', &e.to_string()); } else { self.fail(&e.to_string()); }
+            }
         }
+        if tun && self.is_connected() { *self.tun_iface.lock().unwrap() = probe::physical_interface_fresh(); }
         self.bump();
     }
 
@@ -293,6 +340,7 @@ impl App {
         let me = self.clone();
         spawn(move || {
             let _g = me.connect_lock.lock().unwrap();
+            me.want_connected.store(false, Relaxed);
             let was = me.is_connected();
             me.stop_all();
             if was && me.settings().notify_connection { me.toast(t!("Disconnected"), t!("Traffic goes directly"), false); }
@@ -310,18 +358,35 @@ impl App {
 
     pub fn reconnect(self: &Arc<Self>) {
         let me = self.clone();
-        spawn(move || { let _g = me.connect_lock.lock().unwrap(); me.stop_all(); me.connect_inner(); });
+        spawn(move || { let _g = me.connect_lock.lock().unwrap(); me.stop_all(); me.connect_inner(false); });
     }
 
-    fn on_core_died(&self) {
+    fn on_core_died(self: &Arc<Self>) {
         *self.running_sig.lock().unwrap() = None;
-        sysproxy::restore();
+        let s = self.settings();
+        let blocked = s.kill_switch && s.connect_mode != "TUN" && sysproxy::enabled_by_us();
+        if !blocked { sysproxy::restore(); }
         let msg = match self.status() { Status::Failed(m) => m, _ => String::new() };
         let fe = errors::explain(&msg);
-        let text = t!("The core stopped: %1. System proxy turned off", fe.title);
-        self.notify(&text, Some((t!("Details"), Action::ErrorDetails)));
-        if self.settings().notify_errors { self.toast(t!("Connection lost"), &text, true); }
-        *self.last_error.lock().unwrap() = Some(fe);
+        *self.last_error.lock().unwrap() = Some(fe.clone());
+        let attempt = self.reconnects.fetch_add(1, Relaxed);
+        if s.auto_reconnect && self.want_connected.load(Relaxed) && attempt < 3 {
+            let wait = [2u64, 5, 15][attempt as usize];
+            self.notify(t!("Connection lost — reconnecting in %1 s", wait), Some((t!("Disconnect"), Action::Disconnect)));
+            let me = self.clone();
+            spawn(move || {
+                std::thread::sleep(Duration::from_secs(wait));
+                if !me.want_connected.load(Relaxed) || me.is_connected() { return; }
+                let _g = me.connect_lock.lock().unwrap();
+                me.connect_inner(true);
+                if !me.is_connected() && me.status() != Status::Stopped { me.on_core_died(); }
+            });
+            return;
+        }
+        let text = if blocked { t!("The core stopped: %1. Traffic is blocked until you reconnect or disconnect", fe.title) }
+                   else { t!("The core stopped: %1. System proxy turned off", fe.title) };
+        self.notify(&text, Some(if blocked { (t!("Disconnect"), Action::Disconnect) } else { (t!("Details"), Action::ErrorDetails) }));
+        if s.notify_errors { self.toast(t!("Connection lost"), &text, true); }
     }
 
     /// Clean exit: proxy restored, core stopped, state saved, a downloaded update applied.
@@ -350,6 +415,7 @@ impl App {
             Action::Reconnect => self.reconnect(),
             Action::ErrorDetails => { self.flags.show_error.store(true, Relaxed); self.bump(); }
             Action::RestartUpdate => self.install_update(),
+            Action::Disconnect => self.disconnect(),
         }
     }
 
@@ -446,6 +512,7 @@ impl App {
             let n = r.nodes.len();
             self.edit(|s| { s.nodes.extend(r.nodes.iter().cloned()); if s.settings.selected_node_id.is_none() { s.settings.selected_node_id = Some(first); } });
             count += n;
+            if self.settings().auto_ping { self.ping_all(Some(r.nodes.iter().map(|n| n.id.clone()).collect())); }
         }
         for u in &r.nested { self.add_subscription("", u); count += 1; }
         if !r.rules.is_empty() { let rules = r.rules.clone(); self.update_routing(|x| x.rules.extend(rules)); count += r.rules.len(); }
@@ -511,13 +578,15 @@ impl App {
 
     // ============================================================ ping
 
-    pub fn ping_all(self: &Arc<Self>, ids: Option<Vec<String>>) {
+    pub fn ping_all(self: &Arc<Self>, ids: Option<Vec<String>>) { self.ping_run(ids); }
+
+    fn ping_run(self: &Arc<Self>, ids: Option<Vec<String>>) -> Option<std::thread::JoinHandle<()>> {
         let st = self.snapshot();
         let nodes: Vec<ProxyNode> = st.nodes.iter().filter(|n| match &ids {
             Some(ids) => ids.contains(&n.id),
             None => st.settings.show_hidden || !st.hidden.contains(&n.identity()),
         }).cloned().collect();
-        if nodes.is_empty() { return; }
+        if nodes.is_empty() { return None; }
         let cancel = Arc::new(AtomicBool::new(false));
         if ids.is_none() { let mut c = self.ping_cancel.lock().unwrap(); c.store(true, Relaxed); *c = cancel.clone(); }
         let prev = self.pings.lock().unwrap().clone();
@@ -526,7 +595,7 @@ impl App {
         self.testing.lock().unwrap().extend(ordered.iter().map(|n| n.id.clone()));
         self.bump();
         let me = self.clone();
-        spawn(move || {
+        Some(std::thread::spawn(move || {
             if !me.core.has_core() {
                 if let Err(e) = me.core.install(false, st.settings.geo_source == "RUNETFREEDOM") { me.notify(t!("Couldn't download the core for accurate ping: %1", e), None); }
             }
@@ -566,7 +635,62 @@ impl App {
             for (id, _) in pending.into_inner().unwrap() { me.testing.lock().unwrap().remove(&id); }
             let _ = tcp.join();
             me.bump();
+        }))
+    }
+
+    /// Picks the server with the lowest ping (testing them first if nothing is known) and connects to it.
+    pub fn connect_fastest(self: &Arc<Self>) {
+        let me = self.clone();
+        spawn(move || {
+            let st = me.snapshot();
+            let visible: Vec<String> = st.nodes.iter().filter(|n| st.settings.show_hidden || !st.hidden.contains(&n.identity())).map(|n| n.id.clone()).collect();
+            if visible.is_empty() { me.notify(t!("Add a server or a subscription first"), None); return; }
+            let known = { let p = me.pings.lock().unwrap(); visible.iter().any(|id| p.get(id).is_some_and(|&x| x >= 0)) };
+            if !known { if let Some(h) = me.ping_run(Some(visible.clone())) { let _ = h.join(); } }
+            let best = { let p = me.pings.lock().unwrap(); visible.iter().filter_map(|id| p.get(id).filter(|&&x| x >= 0).map(|&x| (x, id.clone()))).min() };
+            let Some((ms, id)) = best else { me.notify(t!("No server answered"), None); return };
+            let name = st.nodes.iter().find(|n| n.id == id).map(|n| n.name.clone()).unwrap_or_default();
+            me.notify(t!("Fastest: %1 (%2 ms)", name, ms), None);
+            let changed = st.settings.selected_node_id.as_deref() != Some(&id);
+            me.edit(|s| s.settings.selected_node_id = Some(id.clone()));
+            if me.is_connected() { if changed { me.reconnect(); } } else { me.connect(); }
         });
+    }
+
+    pub fn toggle_favorite(&self, id: &str) {
+        let Some(n) = self.snapshot().nodes.into_iter().find(|n| n.id == id) else { return };
+        let key = n.identity();
+        self.edit(|s| { let f = &mut s.settings.favorites; if let Some(i) = f.iter().position(|x| *x == key) { f.remove(i); } else { f.push(key); } });
+    }
+
+    pub fn toggle_group(&self, gid: &str) {
+        let g = gid.to_string();
+        self.edit(|s| { let c = &mut s.settings.collapsed_groups; if let Some(i) = c.iter().position(|x| *x == g) { c.remove(i); } else { c.push(g); } });
+    }
+
+    /// A short description when the clipboard holds something new to import, None otherwise.
+    pub fn clipboard_offer(&self, text: &str) -> Option<String> {
+        let t = text.trim();
+        if t.is_empty() || t.len() > 256 * 1024 { return None; }
+        let inner = Self::deep_link_inner(t).unwrap_or_else(|| t.to_string());
+        let st = self.snapshot();
+        if (inner.starts_with("http://") || inner.starts_with("https://")) && !inner.contains('\n') && !inner.contains('@') {
+            if st.subscriptions.iter().any(|s| s.url == inner) { return None; }
+            let host = inner.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("");
+            return Some(t!("Subscription: %1", host));
+        }
+        let r = parse::import(&inner, None);
+        let known: HashSet<String> = st.nodes.iter().map(|n| n.identity()).collect();
+        let fresh: Vec<&ProxyNode> = r.nodes.iter().filter(|n| !known.contains(&n.identity())).collect();
+        if fresh.len() == 1 { return Some(crate::view::split_flag(&fresh[0].name).1); }
+        if fresh.len() > 1 { return Some(t!("Servers: %1", fresh.len())); }
+        if !r.nested.iter().all(|u| st.subscriptions.iter().any(|s| &s.url == u)) { return Some(t!("Subscription: %1", r.nested[0])); }
+        None
+    }
+
+    pub fn route_check(&self, input: &str) -> core::route::Verdict {
+        let st = self.snapshot();
+        core::route::check(input, &st.settings, &st.routing)
     }
 
     fn finish(&self, id: &str, ms: i32) {
@@ -729,6 +853,10 @@ impl App {
                             let rules: Vec<RouteRule> = res.rules.iter().enumerate().map(|(i, r)| RouteRule { id: format!("{prefix}{i}"), ..r.clone() }).collect();
                             me.update_routing(|x| { x.rules.retain(|r| !r.id.starts_with(&prefix)); let mut v = rules; v.append(&mut x.rules); x.rules = v; });
                         }
+                    }
+                    if st.auto_ping {
+                        let ids: Vec<String> = me.snapshot().nodes.iter().filter(|n| n.subscription_id.as_deref() == Some(&id)).map(|n| n.id.clone()).collect();
+                        me.ping_all(Some(ids));
                     }
                     if selected.is_some_and(|s| s.subscription_id.as_deref() == Some(&id)) { me.suggest_reconnect(); }
                 }

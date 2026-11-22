@@ -53,6 +53,20 @@ export global Ds {
     out property <length> card-gap: 12px; // between cards
 }
 
+/** The Uplinx mark: a flat, symmetric lowercase u — the same geometry as the app icon, in the theme's colours. */
+export component Logo inherits Rectangle {
+    in property <length> size: 32px;
+    in property <brush> ink: @linear-gradient(135deg, Theme.primary 0%, Theme.tertiary 100%);
+    width: size; height: size;
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 512; viewbox-height: 512;
+        // filled outline of the icon's u: two round-topped stems joined by a half ring
+        commands: "M 68 92 A 68 68 0 0 1 204 92 L 204 298 A 52 52 0 0 0 308 298 L 308 92 A 68 68 0 0 1 444 92 L 444 298 A 188 188 0 0 1 68 298 Z";
+        fill: root.ink;
+    }
+}
+
 export component Icon inherits Text {
     in property <string> glyph;
     text: glyph;
@@ -76,7 +90,23 @@ export component IconButton inherits Rectangle {
     opacity: enabled ? 1 : 0.38;
     animate background { duration: 150ms; }
     Icon { glyph: root.glyph; color: root.tint; font-size: 20px; }
-    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+    ta := TouchArea {
+        enabled: root.enabled; mouse-cursor: pointer;
+        clicked => { tip.close(); root.tip-open = false; root.clicked(); }
+        changed has-hover => { if !self.has-hover { tip.close(); root.tip-open = false; } }
+    }
+    // the label appears after a short hover, like native tooltips
+    property <bool> tip-open;
+    Timer { interval: 600ms; running: ta.has-hover && root.tooltip != "" && !root.tip-open; triggered => { tip.show(); root.tip-open = true; } }
+    tip := PopupWindow {
+        x: (root.width - self.width) / 2; y: root.height + Ds.s1;
+        width: tt.preferred-width + 2 * Ds.s2; height: 28px;
+        close-policy: no-auto-close;
+        Rectangle {
+            border-radius: Ds.r-xs; background: Theme.inverse-surface;
+            tt := Text { text: root.tooltip; font-size: 12px; color: Theme.inverse-on-surface; }
+        }
+    }
 }
 
 // kind: 0 filled, 1 tonal, 2 outlined, 3 text, 4 error

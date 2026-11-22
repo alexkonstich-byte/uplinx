@@ -13,6 +13,8 @@ export struct NodeItem {
     selected: bool,
     hidden: bool,
     count: int,         // headers: servers in the group
+    favorite: bool,
+    collapsed: bool,    // headers: the group is folded
 }
 
 export struct SubItem {
@@ -79,6 +81,10 @@ export struct Settings {
     show-hidden: bool,
     server-sort: int,       // 0 manual, 1 name, 2 ping, 3 recent
     hwid: string,
+    clipboard-offer: bool,
+    auto-ping: bool,
+    auto-reconnect: bool,
+    kill-switch: bool,
 }
 
 export struct Routing {
@@ -148,6 +154,13 @@ export global Ui {
     in property <[SpeedRow]> speed-history;
 
     in property <[NodeItem]> nodes;
+    in property <bool> has-servers;          // anything imported at all (first-run screen otherwise)
+    in property <bool> drop-hover;           // files are being dragged over the window
+    in property <string> clip-offer;         // "Servers: 3" when the clipboard holds something new
+    in property <string> route-action;       // PROXY | DIRECT | BLOCK | "" (route check result)
+    in property <string> route-reason;
+    in property <bool> route-checking;
+    in property <bool> logs-paused;
     in property <[NodeItem]> top-nodes;      // servers widget: a short list
     in property <int> node-count;
     in property <bool> pinging;
@@ -216,6 +229,13 @@ export global Logic {
     callback search(string);
     callback set-sort(int);
     callback toggle-group(string);
+    callback connect-fastest();
+    callback clip-accept();
+    callback clip-dismiss();
+    callback route-check(string);
+    callback export-logs();
+    callback set-log-search(string);
+    callback set-logs-paused(bool);
     // import
     callback import-text(string) -> int;
     callback import-clipboard();

@@ -28,7 +28,8 @@ The installer doesn't need administrator rights. Xray-core, the geo databases an
 
 ## Features
 
-**Import anything.** Paste it, drop a file, take it from the clipboard or scan a QR code on screen:
+**Import anything.** Paste it, drop files onto the window, press Ctrl+V or scan a QR code on screen —
+and if you open Uplinx with a new link copied, it offers to add it:
 - share links: `vless`, `vmess`, `trojan`, `ss`, `socks`, `http(s)`, `hy2` / `hysteria2`, `wireguard`;
 - subscriptions (plain or base64), nested subscriptions, JSON arrays of links, proxy pools (`ip:port[:user:pass]`);
 - WireGuard and AmneziaWG `.conf`, Amnezia `vpn://` keys;
@@ -41,9 +42,12 @@ If a panel answers "App not supported", Uplinx retries as other popular clients 
 
 **Connection.**
 - System proxy (previous settings are backed up and restored even after a crash) or TUN for all apps.
+- Reconnects by itself after a crash, a network change or sleep; optional kill switch keeps traffic from going around the VPN.
+- **Connect to the fastest** server in one click (from the app or the tray).
 - AmneziaWG configs with S/H obfuscation run through the official AmneziaWG service.
 - Routing: by rules / global / direct; presets for LAN, Russian sites, ads and runetfreedom lists; custom rules by
   domain, IP, geosite, geoip, process and port; split tunnelling by program.
+- **Where will a site go?** Type a site or IP and see whether it goes through the proxy, directly or is blocked — and which rule decides.
 
 **Measurements.** Real URL-test ping through a throwaway Xray bound to the physical adapter (another VPN can't fake it),
 balancer members included; detection of TUN adapters that fake TCP handshakes; speed test (Cloudflare); site checks.
@@ -51,9 +55,13 @@ balancer members included; detection of TUN adapters that fake TCP handshakes; s
 **Home dashboard.** Widgets on a 12-column grid — connect, server, modes, speed, ping, your IP, subscription quota,
 servers, session, sites, speed test, usage. Drag, resize, add and remove them.
 
-**And also:** Windows accent colours or your own, light / dark, English / Russian, tray with notifications,
-mini window, autostart, logs with filters, server editor, QR export, updates from GitHub Releases
-(quiet MSI upgrade or portable self-update, downloaded in the background).
+**Servers.** Favourites on top, foldable groups, search, sorting by name / ping / recent; new servers are pinged right away.
+
+**And also:** Windows accent colours or your own, light / dark, English / Russian, a tray menu with servers and modes,
+notifications, mini window, autostart, logs with search, pause and export, server editor, QR export, tooltips,
+the window remembers its size and place, updates from GitHub Releases (quiet MSI upgrade or portable self-update).
+
+**Shortcuts:** Ctrl+V import · Ctrl+N add · Ctrl+F search servers · Ctrl+1…6 screens · F5 test / update · Esc close.
 
 ## Build
 
