@@ -1,16 +1,12 @@
-## Uplinx 1.6.4 — much lighter on memory
+## Uplinx 2.0 — rewritten in Rust
 
-**Download:** `Uplinx-1.6.4-setup.exe` (installer), `Uplinx-1.6.4.msi`, or `Uplinx-1.6.4-portable-win64.zip`.
+Uplinx is now a native Rust + Slint app: about **10 MB of RAM** and **0% CPU** when idle, one small exe, starts instantly.
 
-Memory as Task Manager shows it (private working set):
+**Everything is still here:** all import formats, subscriptions with quota, logos and panel routing, system proxy and TUN,
+AmneziaWG, routing rules and split tunnelling, real ping and speed test, the widget home screen, tray notifications,
+mini window, English and Russian, updates from GitHub.
 
-| State | Before | Now |
-|---|---|---|
-| Window open | ~885 MB | **~245 MB** |
-| Minimized | ~885 MB | **~11 MB** |
-| Closed to tray (VPN keeps running) | ~885 MB | **~60 MB** |
-
-How:
-- When the window is closed to the tray, it is **destroyed**, not hidden, which frees its whole UI and graphics memory. It is rebuilt instantly from the tray.
-- After minimizing or hiding, Uplinx collects garbage and hands the unused pages back to Windows.
-- The Java runtime is tuned for footprint: a small heap that shrinks, compact object headers (Java 25), lighter JIT and smaller thread stacks.
+**Downloads**
+- `Uplinx-2.0.0.msi` — installs for the current user, no admin rights needed.
+- `Uplinx-2.0.0-portable-win64.zip` — unpack anywhere and run `Uplinx.exe`.
+- `SHA256SUMS.txt` — checksums.

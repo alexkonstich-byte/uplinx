@@ -1,8 +1,4 @@
-.gradle/
-.kotlin/
-build/
-out/
+/target/
 .idea/
-*.iml
-local.properties
-uplinx-rs/target/
+.vscode/
+*.log

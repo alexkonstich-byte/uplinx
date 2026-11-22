@@ -1,0 +1,40 @@
+<!-- Per-user MSI: installs into %LOCALAPPDATA%\Uplinx without admin rights; newer versions upgrade in place. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Uplinx" Manufacturer="Uplinx" Version="$(var.Version)" UpgradeCode="6B1E1A3C-5D0F-4A8E-9A43-2A6F4D9C7E11"
+           Scope="perUser" Compressed="yes" Language="1033">
+    <SummaryInformation Description="Uplinx Client" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Uplinx is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="AppIcon" SourceFile="assets\uplinx.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/alexkonstich-byte/uplinx" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="Uplinx" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Uplinx">
+      <Component Id="App" Directory="INSTALLFOLDER" Guid="3F7B9C1E-8A52-4D6B-9E1F-2C4A7B8D0E11">
+        <File Id="UplinxExe" Source="target\release\uplinx.exe" Name="Uplinx.exe" KeyPath="no" />
+        <RegistryValue Root="HKCU" Key="Software\Uplinx" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      </Component>
+      <Component Id="StartMenu" Directory="ProgramMenuFolder" Guid="9D2E4B6A-1C3F-4E58-A7B9-0F1E2D3C4B5A">
+        <Shortcut Id="StartMenuShortcut" Name="Uplinx" Description="Uplinx Client" Target="[INSTALLFOLDER]Uplinx.exe"
+                  WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+        <RegistryValue Root="HKCU" Key="Software\Uplinx" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <Component Id="Desktop" Directory="DesktopFolder" Guid="5A6B7C8D-9E0F-4A1B-8C2D-3E4F5A6B7C8D">
+        <Shortcut Id="DesktopShortcut" Name="Uplinx" Target="[INSTALLFOLDER]Uplinx.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+        <RegistryValue Root="HKCU" Key="Software\Uplinx" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </Feature>
+
+    <!-- start Uplinx when a manual install finishes (the updater starts it itself) -->
+    <CustomAction Id="LaunchApp" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]Uplinx.exe&quot;" Return="asyncNoWait" Execute="immediate" />
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed AND NOT UPLINX_NOLAUNCH AND UILevel &gt;= 5" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

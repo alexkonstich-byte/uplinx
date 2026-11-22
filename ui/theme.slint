@@ -1,0 +1,327 @@
+// Material You 3 Expressive building blocks. Colours come from Rust (dynamic scheme from the Windows accent).
+import { Shapes } from "shapes.slint";
+
+export global Theme {
+    in property <bool> dark: true;
+    in property <color> primary: #a8c8ff;
+    in property <color> on-primary: #05305f;
+    in property <color> primary-container: #234777;
+    in property <color> on-primary-container: #d6e3ff;
+    in property <color> secondary: #bdc7dc;
+    in property <color> secondary-container: #3e4759;
+    in property <color> on-secondary-container: #d9e3f8;
+    in property <color> tertiary: #dbbce1;
+    in property <color> tertiary-container: #573e5d;
+    in property <color> on-tertiary-container: #f8d8fe;
+    in property <color> surface: #111318;
+    in property <color> surface-container-low: #191c20;
+    in property <color> surface-container: #1d2024;
+    in property <color> surface-container-high: #282a2f;
+    in property <color> surface-container-highest: #33353a;
+    in property <color> on-surface: #e2e2e9;
+    in property <color> on-surface-variant: #c4c6d0;
+    in property <color> outline: #8e9099;
+    in property <color> outline-variant: #44474f;
+    in property <color> error: #ffb4ab;
+    in property <color> error-container: #93000a;
+    in property <color> on-error-container: #ffdad6;
+    in property <color> inverse-surface: #e2e2e9;
+    in property <color> inverse-on-surface: #2e3036;
+    in property <color> good: #4fd18b;
+    in property <color> warn: #f2b84b;
+    // false while the window is in the background or minimised: no continuous animations
+    in property <bool> motion: false;
+}
+
+export component Icon inherits Text {
+    in property <string> glyph;
+    text: glyph;
+    font-family: "Material Icons Round";
+    font-size: 22px;
+    color: Theme.on-surface;
+    horizontal-alignment: center;
+    vertical-alignment: center;
+}
+
+export component IconButton inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> filled;
+    in property <bool> enabled: true;
+    in property <color> tint: filled ? Theme.on-primary : Theme.on-surface-variant;
+    in property <string> tooltip;
+    callback clicked;
+    width: 40px; height: 40px;
+    border-radius: self.height / 2;
+    background: filled ? Theme.primary : (ta.has-hover && enabled ? Theme.on-surface.with-alpha(0.08) : transparent);
+    opacity: enabled ? 1 : 0.38;
+    animate background { duration: 150ms; }
+    Icon { glyph: root.glyph; color: root.tint; font-size: 20px; }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// kind: 0 filled, 1 tonal, 2 outlined, 3 text, 4 error
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <string> glyph;
+    in property <int> kind: 0;
+    in property <bool> enabled: true;
+    callback clicked;
+    property <color> fg: kind == 0 ? Theme.on-primary : (kind == 1 ? Theme.on-secondary-container : (kind == 4 ? Theme.on-error-container : Theme.primary));
+    height: 40px;
+    min-width: lay.preferred-width;
+    border-radius: ta.pressed ? 10px : self.height / 2;
+    animate border-radius { duration: 160ms; easing: ease-out; }
+    background: kind == 0 ? Theme.primary : (kind == 1 ? Theme.secondary-container : (kind == 4 ? Theme.error-container : transparent));
+    border-width: kind == 2 ? 1px : 0;
+    border-color: Theme.outline-variant;
+    opacity: enabled ? 1 : 0.38;
+    Rectangle { border-radius: parent.border-radius; background: ta.has-hover && root.enabled ? root.fg.with-alpha(0.08) : transparent; }
+    lay := HorizontalLayout {
+        padding-left: root.glyph != "" ? 16px : 24px;
+        padding-right: 24px;
+        spacing: 8px;
+        alignment: center;
+        if root.glyph != "": Icon { glyph: root.glyph; color: root.fg; font-size: 18px; }
+        Text { text: root.text; color: root.fg; font-size: 14px; font-weight: 600; vertical-alignment: center; }
+    }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <string> glyph;
+    in property <bool> selected;
+    callback clicked;
+    height: 32px;
+    min-width: lay.preferred-width;
+    border-radius: 8px;
+    background: selected ? Theme.secondary-container : (ta.has-hover ? Theme.on-surface.with-alpha(0.06) : transparent);
+    border-width: selected ? 0 : 1px;
+    border-color: Theme.outline-variant;
+    animate background { duration: 150ms; }
+    lay := HorizontalLayout {
+        padding-left: 12px; padding-right: 14px; spacing: 6px;
+        if root.selected || root.glyph != "": Icon { glyph: root.selected ? "\u{e5ca}" : root.glyph; font-size: 16px; color: root.selected ? Theme.on-secondary-container : Theme.on-surface-variant; }
+        Text { text: root.text; font-size: 13px; font-weight: 500; vertical-alignment: center; color: root.selected ? Theme.on-secondary-container : Theme.on-surface-variant; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+/** Connected button group (M3 Expressive): the selected segment grows rounder. */
+export component Segmented inherits HorizontalLayout {
+    in property <[string]> options;
+    in property <int> index;
+    callback picked(int);
+    spacing: 2px;
+    for o[i] in options: Rectangle {
+        height: 40px;
+        horizontal-stretch: 1;
+        min-width: t.preferred-width + 24px;
+        property <bool> sel: i == root.index;
+        border-top-left-radius: sel || i == 0 ? 20px : 6px;
+        border-bottom-left-radius: self.border-top-left-radius;
+        border-top-right-radius: sel || i == root.options.length - 1 ? 20px : 6px;
+        border-bottom-right-radius: self.border-top-right-radius;
+        background: sel ? Theme.primary : (ta.has-hover ? Theme.surface-container-highest : Theme.surface-container-high);
+        animate background { duration: 180ms; }
+        t := Text { text: o; font-size: 13px; font-weight: 600; color: sel ? Theme.on-primary : Theme.on-surface-variant; overflow: elide; }
+        ta := TouchArea { mouse-cursor: pointer; clicked => { root.picked(i); } }
+    }
+}
+
+export component Switch inherits Rectangle {
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+    width: 52px; height: 32px;
+    border-radius: 16px;
+    background: checked ? Theme.primary : Theme.surface-container-highest;
+    border-width: checked ? 0 : 2px;
+    border-color: Theme.outline;
+    opacity: enabled ? 1 : 0.38;
+    animate background { duration: 150ms; }
+    thumb := Rectangle {
+        width: root.checked ? 24px : (ta.pressed ? 28px : 16px);
+        height: self.width;
+        border-radius: self.width / 2;
+        x: root.checked ? root.width - self.width - 4px : (root.height - self.height) / 2 + 2px;
+        y: (root.height - self.height) / 2;
+        background: root.checked ? Theme.on-primary : Theme.outline;
+        animate x, width { duration: 200ms; easing: ease-out-back; }
+        if root.checked: Icon { glyph: "\u{e5ca}"; font-size: 14px; color: Theme.primary; }
+    }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.checked = !root.checked; root.toggled(root.checked); } }
+}
+
+export component Card inherits Rectangle {
+    in property <bool> high;
+    border-radius: 24px;
+    background: high ? Theme.surface-container-high : Theme.surface-container;
+}
+
+export component Title inherits Text {
+    font-family: "Unbounded";
+    font-weight: 600;
+    font-size: 22px;
+    color: Theme.on-surface;
+    vertical-alignment: center;
+}
+
+export component Label inherits Text {
+    in property <bool> muted;
+    font-size: 13px;
+    color: muted ? Theme.on-surface-variant : Theme.on-surface;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+/** A settings row: title, optional subtitle, and a trailing control. */
+export component Row inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    min-height: subtitle == "" ? 52px : 64px;
+    HorizontalLayout {
+        padding-left: 20px; padding-right: 16px; spacing: 16px;
+        VerticalLayout {
+            alignment: center; spacing: 2px; horizontal-stretch: 1;
+            Text { text: root.title; font-size: 14px; color: Theme.on-surface; overflow: elide; }
+            if root.subtitle != "": Text { text: root.subtitle; font-size: 12px; color: Theme.on-surface-variant; wrap: word-wrap; }
+        }
+        HorizontalLayout { alignment: end; VerticalLayout { alignment: center; @children } }
+    }
+}
+
+export component Shape inherits Path {
+    in property <string> shape: Shapes.circle;
+    viewbox-width: 100; viewbox-height: 100;
+    commands: shape;
+}
+
+/** Server avatar: the flag sticker inside a shape that blooms when selected. */
+export component Avatar inherits Rectangle {
+    in property <image> flag;
+    in property <bool> has-flag;
+    in property <bool> selected;
+    in property <string> glyph: "\u{e80b}";
+    in property <length> size: 44px;
+    width: size; height: size;
+    Shape {
+        width: 100%; height: 100%;
+        shape: root.selected ? Shapes.cookie12 : Shapes.circle;
+        fill: root.selected ? Theme.primary-container : Theme.surface-container-highest;
+    }
+    if root.has-flag: Image { source: root.flag; width: root.size * 0.6; height: self.width; image-rendering: smooth; }
+    if !root.has-flag: Icon { glyph: root.glyph; font-size: root.size * 0.5; color: root.selected ? Theme.on-primary-container : Theme.on-surface-variant; }
+}
+
+/** Single-line input in M3 "filled" style. */
+export component Field inherits Rectangle {
+    in property <string> label;
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <InputType> input-type: InputType.text;
+    callback edited(string);
+    callback accepted(string);
+    height: 56px;
+    border-top-left-radius: 8px; border-top-right-radius: 8px;
+    background: Theme.surface-container-highest;
+    Rectangle { y: parent.height - self.height; height: input.has-focus ? 2px : 1px; background: input.has-focus ? Theme.primary : Theme.on-surface-variant; }
+    Text { x: 16px; y: 7px; text: root.label; font-size: 11px; color: input.has-focus ? Theme.primary : Theme.on-surface-variant; }
+    if root.text == "" && !input.has-focus: Text { x: 16px; y: 26px; text: root.placeholder; font-size: 15px; color: Theme.on-surface-variant.with-alpha(0.6); }
+    input := TextInput {
+        x: 16px; y: 24px; width: parent.width - 32px; height: 24px;
+        text <=> root.text;
+        input-type: root.input-type;
+        font-size: 15px;
+        color: Theme.on-surface;
+        selection-background-color: Theme.primary.with-alpha(0.35);
+        selection-foreground-color: Theme.on-surface;
+        single-line: true;
+        edited => { root.edited(self.text); }
+        accepted => { root.accepted(self.text); }
+    }
+}
+
+/** Multi-line plain text area (paste configs, edit lists). */
+export component Area inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    border-radius: 12px;
+    background: Theme.surface-container-highest;
+    clip: true;
+    if root.text == "" && !input.has-focus: Text { x: 14px; y: 12px; text: root.placeholder; font-size: 13px; color: Theme.on-surface-variant.with-alpha(0.7); }
+    Flickable {
+        content-height: max(input.preferred-height + 24px, self.height);
+        input := TextInput {
+            x: 14px; y: 12px; width: root.width - 28px;
+            text <=> root.text;
+            font-size: 13px;
+            color: Theme.on-surface;
+            single-line: false;
+            wrap: char-wrap;
+            selection-background-color: Theme.primary.with-alpha(0.35);
+            selection-foreground-color: Theme.on-surface;
+        }
+    }
+}
+
+/** Determinate or looping progress line. */
+export component Progress inherits Rectangle {
+    in property <float> value: -1; // < 0 = indeterminate
+    height: 4px;
+    border-radius: 2px;
+    background: Theme.secondary-container;
+    clip: true;
+    property <float> t: Theme.motion && value < 0 ? mod(animation-tick() / 1400ms, 1.0) : 0.3;
+    Rectangle {
+        border-radius: 2px;
+        background: Theme.primary;
+        width: root.value < 0 ? root.width * 0.35 : root.width * clamp(root.value, 0, 1);
+        x: root.value < 0 ? (root.width * 1.35) * root.t - root.width * 0.35 : 0;
+    }
+}
+
+/** Tiny bar chart; values are 0..1. */
+export component Spark inherits Rectangle {
+    in property <[float]> values;
+    in property <color> tint: Theme.primary;
+    in property <float> alpha: 1;
+    property <length> bw: self.width / max(1, values.length);
+    for v[i] in root.values: Rectangle {
+        x: i * root.bw; width: max(1px, root.bw - 2px);
+        height: max(2px, root.height * clamp(v, 0, 1));
+        y: root.height - self.height;
+        border-radius: min(3px, self.width / 2);
+        background: root.tint.with-alpha(root.alpha * (0.45 + 0.55 * v));
+    }
+}
+
+export component Scrim inherits Rectangle {
+    callback dismiss;
+    background: #000000a0;
+    TouchArea { clicked => { root.dismiss(); } }
+}
+
+/** Modal dialog: scrim + rounded card; content goes in @children. */
+export component Dialog inherits Rectangle {
+    in property <string> title;
+    in property <string> glyph;
+    in property <length> card-width: 520px;
+    callback dismiss;
+    Scrim { dismiss => { root.dismiss(); } }
+    Rectangle {
+        width: min(root.card-width, root.width - 48px);
+        height: min(lay.preferred-height, root.height - 48px);
+        border-radius: 28px;
+        background: Theme.surface-container-high;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: #00000060;
+        TouchArea { } // swallow clicks
+        lay := VerticalLayout {
+            padding: 24px; spacing: 16px;
+            if root.glyph != "": Icon { glyph: root.glyph; font-size: 26px; color: Theme.secondary; }
+            Text { text: root.title; font-size: 22px; color: Theme.on-surface; wrap: word-wrap; horizontal-alignment: root.glyph != "" ? center : left; }
+            @children
+        }
+    }
+}

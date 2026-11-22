@@ -1,0 +1,382 @@
+// Home: a dashboard of widgets on a 12-column grid. In edit mode widgets can be dragged, resized, added and removed.
+import { Theme, Icon, IconButton, Button, Chip, Segmented, Card, Label, Shape, Avatar, Progress, Spark } from "theme.slint";
+import { Ui, Logic, WidgetItem, NodeItem } from "data.slint";
+import { Shapes } from "shapes.slint";
+import { Nav, PingChip } from "pages.slint";
+
+/** The hero button: a cookie that turns while the window is active, faster when connecting. */
+export component ConnectButton inherits Rectangle {
+    in property <length> size: 200px;
+    property <int> state: Ui.status;
+    property <float> speed: state == 1 ? 1.0 / 1.6 : (state == 2 ? 1.0 / 16 : 1.0 / 40);
+    property <angle> spin: Theme.motion ? mod(animation-tick() / 1s * speed, 1.0) * 360deg : 0deg;
+    width: size * 1.3; height: size * 1.3;
+    Rectangle {
+        width: root.size * 1.22; height: self.width; border-radius: self.width / 2;
+        background: Theme.primary.with-alpha(root.state == 2 ? 0.12 : 0);
+        animate background { duration: 600ms; }
+    }
+    Rectangle {
+        width: root.size; height: root.size;
+        transform-rotation: root.spin;
+        transform-scale: ta.pressed ? 0.92 : (ta.has-hover ? 1.04 : 1.0);
+        animate transform-scale { duration: 220ms; easing: ease-out-back; }
+        Shape {
+            width: 100%; height: 100%;
+            shape: root.state == 2 ? Shapes.cookie9 : (root.state == 1 ? Shapes.soft-burst : Shapes.cookie12);
+            fill: root.state == 2 ? Theme.primary : (root.state == 1 ? Theme.tertiary-container : (root.state == 3 ? Theme.error-container : Theme.surface-container-highest));
+            animate fill { duration: 400ms; }
+        }
+    }
+    Icon {
+        glyph: "\u{e8ac}";
+        font-size: root.size * 0.3;
+        color: root.state == 2 ? Theme.on-primary : (root.state == 1 ? Theme.on-tertiary-container : (root.state == 3 ? Theme.on-error-container : Theme.on-surface-variant));
+        animate color { duration: 400ms; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { Logic.toggle-connect(); } }
+}
+
+component Head inherits HorizontalLayout {
+    in property <string> glyph;
+    in property <string> title;
+    spacing: 8px;
+    height: 24px;
+    Icon { glyph: root.glyph; font-size: 18px; color: Theme.primary; width: 20px; }
+    Text { text: root.title; font-size: 13px; font-weight: 600; color: Theme.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+    @children
+}
+
+component Big inherits Text {
+    font-family: "Unbounded";
+    font-weight: 600;
+    color: Theme.on-surface;
+    overflow: elide;
+}
+
+component ConnectW inherits Rectangle {
+    property <length> s: min(self.width * 0.62, (self.height - 90px) * 0.8);
+    VerticalLayout {
+        padding: 16px; spacing: 4px; alignment: center;
+        HorizontalLayout { alignment: center; ConnectButton { size: max(80px, root.s); } }
+        Big { text: Ui.status-text; font-size: root.width > 380px ? 26px : 20px; horizontal-alignment: center; }
+        Text { text: Ui.server-name; font-size: 14px; color: Theme.on-surface-variant; horizontal-alignment: center; overflow: elide; }
+        if Ui.preparing: VerticalLayout {
+            spacing: 6px; padding-top: 6px;
+            Text { text: Ui.prep-text; font-size: 12px; color: Theme.on-surface-variant; horizontal-alignment: center; }
+            HorizontalLayout { alignment: center; Progress { width: 180px; value: Ui.prep-progress; } }
+        }
+    }
+}
+
+component ServerW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 10px;
+        Head { glyph: "\u{e875}"; title: @tr("Server"); }
+        HorizontalLayout {
+            spacing: 14px; vertical-stretch: 1;
+            VerticalLayout { alignment: center; Avatar { flag: Ui.server-flag; has-flag: Ui.server-has-flag; selected: Ui.status == 2; } }
+            VerticalLayout {
+                alignment: center; spacing: 2px; horizontal-stretch: 1;
+                Text { text: Ui.server-name; font-size: 16px; font-weight: 600; color: Theme.on-surface; overflow: elide; }
+                Text { text: Ui.server-detail; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; }
+            }
+            VerticalLayout { alignment: center; IconButton { glyph: "\u{e5cc}"; clicked => { Nav.page = 1; } } }
+        }
+    }
+}
+
+component ModesW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 10px; alignment: center;
+        Segmented { options: [@tr("System proxy"), "TUN"]; index: Ui.settings.connect-mode; picked(i) => { Logic.set-connect-mode(i); } }
+        Segmented { options: [@tr("By rules"), @tr("Global"), @tr("Direct")]; index: Ui.routing.mode; picked(i) => { Logic.set-routing-mode(i); } }
+    }
+}
+
+component SpeedW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 6px;
+        Head { glyph: "\u{e9e4}"; title: @tr("Speed"); }
+        HorizontalLayout {
+            spacing: 18px;
+            HorizontalLayout { spacing: 4px; Icon { glyph: "\u{f090}"; font-size: 18px; color: Theme.primary; width: 18px; } Big { text: Ui.down-speed; font-size: 20px; } }
+            HorizontalLayout { spacing: 4px; Icon { glyph: "\u{f09b}"; font-size: 18px; color: Theme.tertiary; width: 18px; } Big { text: Ui.up-speed; font-size: 20px; } }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            Spark { width: 100%; height: 100%; values: Ui.speed-down-values; }
+            Spark { width: 100%; height: 50%; y: parent.height / 2; values: Ui.speed-up-values; tint: Theme.tertiary; alpha: 0.8; }
+        }
+    }
+}
+
+component PingW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 6px;
+        Head { glyph: "\u{e1d8}"; title: @tr("Ping"); IconButton { width: 28px; height: 28px; glyph: "\u{e5d5}"; clicked => { Logic.ping-current(); } } }
+        Big { text: Ui.ping-now; font-size: 22px; }
+        if Ui.ping-stats != "": Text { text: Ui.ping-stats; font-size: 11px; color: Theme.on-surface-variant; overflow: elide; }
+        Spark { vertical-stretch: 1; values: Ui.ping-values; tint: Theme.secondary; }
+    }
+}
+
+component IpW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 4px;
+        Head { glyph: "\u{e80b}"; title: @tr("Your IP"); IconButton { width: 28px; height: 28px; glyph: "\u{e5d5}"; enabled: !Ui.ip-loading; clicked => { Logic.refresh-ip(); } } }
+        Big { text: Ui.ip-loading ? "…" : (Ui.ip == "" ? "—" : Ui.ip); font-size: 18px; }
+        HorizontalLayout {
+            spacing: 6px;
+            if Ui.ip-has-flag: Image { source: Ui.ip-flag; width: 18px; height: 18px; }
+            Text { text: Ui.ip-place; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; vertical-alignment: center; }
+        }
+        Text { text: Ui.ip-isp; font-size: 11px; color: Theme.on-surface-variant; overflow: elide; }
+    }
+}
+
+component QuotaW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 8px;
+        Head { glyph: "\u{e1db}"; title: Ui.has-quota ? Ui.quota-title : @tr("Subscription"); }
+        if !Ui.has-quota: Text { text: @tr("No subscription data"); font-size: 13px; color: Theme.on-surface-variant; }
+        if Ui.has-quota: Big { text: Ui.quota-text; font-size: 17px; }
+        if Ui.has-quota && Ui.quota-used >= 0: Progress { value: Ui.quota-used; }
+        if Ui.has-quota: Text { text: Ui.quota-expire; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; }
+    }
+}
+
+component ServersW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 6px;
+        Head { glyph: "\u{e8ee}"; title: @tr("Servers"); IconButton { width: 28px; height: 28px; glyph: "\u{e9e4}"; enabled: !Ui.pinging; clicked => { Logic.ping-all(); } } }
+        Flickable {
+            vertical-stretch: 1;
+            content-height: list.preferred-height;
+            list := VerticalLayout {
+                for n in Ui.top-nodes: Rectangle {
+                    height: 44px; border-radius: 12px;
+                    background: n.selected ? Theme.secondary-container : (ta.has-hover ? Theme.surface-container-highest : transparent);
+                    ta := TouchArea { mouse-cursor: pointer; clicked => { Logic.select-node(n.id); } }
+                    HorizontalLayout {
+                        padding-left: 6px; padding-right: 6px; spacing: 10px;
+                        VerticalLayout { alignment: center; Avatar { size: 32px; flag: n.flag; has-flag: n.has-flag; selected: n.selected; glyph: n.glyph; } }
+                        Text { text: n.name; font-size: 13px; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                        VerticalLayout { alignment: center; PingChip { ping: n.ping; testing: n.testing; clicked => { Logic.ping-node(n.id); } } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component SessionW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 6px;
+        Head { glyph: "\u{e8b5}"; title: @tr("Session"); }
+        Big { text: Ui.session-time; font-size: 22px; }
+        HorizontalLayout {
+            spacing: 14px;
+            Text { text: "↓ " + Ui.down-total; font-size: 13px; color: Theme.on-surface-variant; }
+            Text { text: "↑ " + Ui.up-total; font-size: 13px; color: Theme.on-surface-variant; }
+        }
+    }
+}
+
+component SitesW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 6px;
+        Head {
+            glyph: "\u{e8be}"; title: @tr("Sites");
+            IconButton { width: 28px; height: 28px; glyph: "\u{e3c9}"; clicked => { Nav.c = Ui.sites-text; Nav.dialog = "sites"; } }
+            IconButton { width: 28px; height: 28px; glyph: "\u{e5d5}"; enabled: !Ui.sites-checking; clicked => { Logic.check-sites(); } }
+        }
+        Flickable {
+            vertical-stretch: 1;
+            content-height: sl.preferred-height;
+            sl := VerticalLayout {
+                for s in Ui.sites: HorizontalLayout {
+                    height: 28px; spacing: 8px;
+                    Rectangle {
+                        width: 10px; height: 10px; y: 9px; border-radius: 5px;
+                        background: !s.checked ? Theme.outline-variant : (s.ms < 0 || s.code >= 400 ? Theme.error : Theme.good);
+                    }
+                    Text { text: s.site; font-size: 13px; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                    Text { text: !s.checked ? "" : (s.ms < 0 ? @tr("unavailable") : s.ms + " ms"); font-size: 12px; color: Theme.on-surface-variant; vertical-alignment: center; }
+                }
+            }
+        }
+    }
+}
+
+component SpeedTestW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 8px;
+        Head { glyph: "\u{e9e4}"; title: @tr("Speed test"); }
+        HorizontalLayout {
+            spacing: 18px;
+            VerticalLayout { Text { text: @tr("Download"); font-size: 11px; color: Theme.on-surface-variant; } Big { text: Ui.speed-down; font-size: 18px; } }
+            VerticalLayout { Text { text: @tr("Upload"); font-size: 11px; color: Theme.on-surface-variant; } Big { text: Ui.speed-up; font-size: 18px; } }
+            VerticalLayout { Text { text: @tr("Ping"); font-size: 11px; color: Theme.on-surface-variant; } Big { text: Ui.speed-ping; font-size: 18px; } }
+        }
+        if Ui.speed-running: VerticalLayout {
+            spacing: 6px;
+            Text { text: Ui.speed-now; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; }
+            Progress { value: Ui.speed-phase >= 2 ? Ui.speed-fraction : -1; }
+        }
+        if !Ui.speed-running: Text { text: Ui.speed-node; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; }
+        Rectangle { vertical-stretch: 1; }
+        Button { kind: 1; glyph: "\u{e037}"; text: Ui.speed-running ? @tr("Testing…") : @tr("Start"); enabled: !Ui.speed-running; clicked => { Logic.run-speed-test(); } }
+    }
+}
+
+component UsageW inherits Rectangle {
+    VerticalLayout {
+        padding: 16px; spacing: 8px;
+        Head { glyph: "\u{e26b}"; title: @tr("Usage"); Text { text: Ui.usage-total; font-size: 12px; color: Theme.on-surface-variant; vertical-alignment: center; } }
+        bars := Rectangle {
+            vertical-stretch: 1;
+            property <length> bw: self.width / max(1, Ui.usage.length);
+            for b[i] in Ui.usage: Rectangle {
+                x: i * bars.bw + 2px; width: bars.bw - 4px;
+                height: max(3px, (bars.height - 16px) * b.value);
+                y: bars.height - 16px - self.height;
+                border-radius: 4px;
+                background: Theme.primary.with-alpha(0.35 + 0.65 * b.value);
+                Text { y: parent.height + 2px; text: b.label; font-size: 9px; color: Theme.on-surface-variant; }
+            }
+        }
+        Text { text: Ui.all-time; font-size: 11px; color: Theme.on-surface-variant; overflow: elide; }
+    }
+}
+
+component Tile inherits Rectangle {
+    in property <WidgetItem> w;
+    in property <length> cell;     // column width
+    in property <length> row-h;      // row-h height
+    in property <length> gap;
+    property <length> dx;
+    property <length> dy;
+    property <length> dw;
+    property <length> dh;
+    property <bool> moving;
+    x: w.x * (cell + gap) + dx;
+    y: w.y * (row-h + gap) + dy;
+    width: max(cell, w.w * cell + (w.w - 1) * gap + dw);
+    height: max(row-h, w.h * row-h + (w.h - 1) * gap + dh);
+    z: moving ? 10 : 0;
+    card := Rectangle {
+        border-radius: 24px;
+        background: Theme.surface-container;
+        border-width: Nav.edit-layout ? 2px : 0;
+        border-color: root.moving ? Theme.primary : Theme.outline-variant;
+        drop-shadow-blur: root.moving ? 20px : 0;
+        drop-shadow-color: #00000050;
+        clip: true;
+        if root.w.kind == "CONNECT": ConnectW { }
+        if root.w.kind == "SERVER": ServerW { }
+        if root.w.kind == "MODES": ModesW { }
+        if root.w.kind == "SPEED": SpeedW { }
+        if root.w.kind == "PING": PingW { }
+        if root.w.kind == "IP": IpW { }
+        if root.w.kind == "QUOTA": QuotaW { }
+        if root.w.kind == "SERVERS": ServersW { }
+        if root.w.kind == "SESSION": SessionW { }
+        if root.w.kind == "SITES": SitesW { }
+        if root.w.kind == "SPEEDTEST": SpeedTestW { }
+        if root.w.kind == "USAGE": UsageW { }
+    }
+    if Nav.edit-layout: Rectangle {
+        border-radius: 24px;
+        background: Theme.surface.with-alpha(0.35);
+        TouchArea {
+            mouse-cursor: move;
+            moved => { root.dx = self.mouse-x - self.pressed-x; root.dy = self.mouse-y - self.pressed-y; }
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down { root.moving = true; }
+                if e.kind == PointerEventKind.up {
+                    root.moving = false;
+                    Logic.widget-move(root.w.id, round((root.x) / (root.cell + root.gap)), round((root.y) / (root.row-h + root.gap)));
+                    root.dx = 0; root.dy = 0;
+                }
+            }
+        }
+        Rectangle {
+            x: 8px; y: 8px; width: 32px; height: 32px; border-radius: 16px; background: Theme.error-container;
+            Icon { glyph: "\u{e5cd}"; font-size: 18px; color: Theme.on-error-container; }
+            TouchArea { mouse-cursor: pointer; clicked => { Logic.widget-remove(root.w.id); } }
+        }
+        Rectangle {
+            x: parent.width - 34px; y: parent.height - 34px; width: 28px; height: 28px; border-radius: 14px; background: Theme.primary;
+            Icon { glyph: "\u{e5d0}"; font-size: 16px; color: Theme.on-primary; transform-rotation: 45deg; }
+            TouchArea {
+                mouse-cursor: nwse-resize;
+                moved => { root.dw = self.mouse-x - self.pressed-x; root.dh = self.mouse-y - self.pressed-y; }
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down { root.moving = true; }
+                    if e.kind == PointerEventKind.up {
+                        root.moving = false;
+                        Logic.widget-resize(root.w.id, max(2, round((root.width + root.gap) / (root.cell + root.gap))), max(2, round((root.height + root.gap) / (root.row-h + root.gap))));
+                        root.dw = 0; root.dh = 0;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component HomePage inherits Rectangle {
+    property <length> gap: 12px;
+    property <length> pad: 24px;
+    property <length> cell: (self.width - 2 * pad - 11 * gap) / 12;
+    property <length> row-h: 64px;
+    property <[{k: string, t: string, g: string}]> kinds: [
+        { k: "CONNECT", t: @tr("Connect"), g: "\u{e8ac}" }, { k: "SERVER", t: @tr("Server"), g: "\u{e875}" },
+        { k: "MODES", t: @tr("Modes"), g: "\u{f184}" }, { k: "SPEED", t: @tr("Speed"), g: "\u{e9e4}" },
+        { k: "PING", t: @tr("Ping"), g: "\u{e1d8}" }, { k: "IP", t: @tr("Your IP"), g: "\u{e80b}" },
+        { k: "QUOTA", t: @tr("Subscription"), g: "\u{e1db}" }, { k: "SERVERS", t: @tr("Servers"), g: "\u{e8ee}" },
+        { k: "SESSION", t: @tr("Session"), g: "\u{e8b5}" }, { k: "SITES", t: @tr("Sites"), g: "\u{e8be}" },
+        { k: "SPEEDTEST", t: @tr("Speed test"), g: "\u{e9e4}" }, { k: "USAGE", t: @tr("Usage"), g: "\u{e26b}" },
+    ];
+    // decorative shapes; they only move while connecting
+    property <angle> drift: Theme.motion && Ui.status == 1 ? mod(animation-tick() / 30s, 1.0) * 360deg : 0deg;
+    Shape { x: root.width - 260px; y: -80px; width: 360px; height: 360px; shape: Shapes.soft-burst; fill: Theme.primary.with-alpha(0.05); transform-rotation: root.drift; }
+    Shape { x: -120px; y: root.height - 240px; width: 320px; height: 320px; shape: Shapes.clover4; fill: Theme.tertiary.with-alpha(0.05); transform-rotation: -root.drift; }
+
+    VerticalLayout {
+        HorizontalLayout {
+            padding-left: root.pad; padding-right: root.pad; padding-top: 16px; spacing: 8px; height: 56px;
+            Text { text: Nav.edit-layout ? @tr("Drag widgets, pull the corner to resize") : ""; font-size: 13px; color: Theme.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
+            if Nav.edit-layout: Button { kind: 3; text: @tr("Reset"); clicked => { Logic.widgets-reset(); } }
+            if Nav.edit-layout: Button { kind: 1; glyph: "\u{e145}"; text: @tr("Widget"); clicked => { add-menu.show(); } }
+            Button { kind: Nav.edit-layout ? 0 : 3; glyph: Nav.edit-layout ? "\u{e5ca}" : "\u{e3c9}"; text: Nav.edit-layout ? @tr("Done") : @tr("Edit"); clicked => { Nav.edit-layout = !Nav.edit-layout; } }
+        }
+        Flickable {
+            vertical-stretch: 1;
+            content-height: grid.height + 24px;
+            grid := Rectangle {
+                x: root.pad; y: 0;
+                width: root.width - 2 * root.pad;
+                height: Ui.grid-rows * (root.row-h + root.gap) + (Nav.edit-layout ? 3 * (root.row-h + root.gap) : 0);
+                for w in Ui.widgets: Tile { w: w; cell: root.cell; row-h: root.row-h; gap: root.gap; }
+            }
+        }
+    }
+    add-menu := PopupWindow {
+        x: root.width - 260px; y: 56px; width: 220px;
+        Rectangle {
+            border-radius: 16px; background: Theme.surface-container-highest; drop-shadow-blur: 16px; drop-shadow-color: #00000050;
+            VerticalLayout {
+                padding: 6px;
+                for k in root.kinds: Rectangle {
+                    height: 40px; border-radius: 10px;
+                    background: ka.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
+                    HorizontalLayout { padding-left: 12px; spacing: 12px;
+                        Icon { glyph: k.g; font-size: 18px; width: 20px; color: Theme.primary; }
+                        Text { text: k.t; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; } }
+                    ka := TouchArea { clicked => { Logic.widget-add(k.k); } }
+                }
+            }
+        }
+    }
+}

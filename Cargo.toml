@@ -1,0 +1,41 @@
+[package]
+name = "uplinx"
+version = "2.0.0"
+edition = "2024"
+description = "Uplinx Client"
+license = "MIT"
+
+[dependencies]
+slint = { version = "1.19.0", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "unstable-winit-030"] }
+material-colors = "0.5.0"
+# runtime language switching for @tr()
+i-slint-core = { version = "=1.19.0", features = ["tr"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+winreg = "0.56.0"
+anyhow = "1.0.104"
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+percent-encoding = "2.3"
+flate2 = "1"
+serde_yaml = "0.9"
+ureq = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+arboard = { version = "3", default-features = false, features = ["windows-sys", "image-data"] }
+rqrr = "0.9"
+qrcode = { version = "0.14", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp"] }
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_UI_Controls_Dialogs"] }
+
+[build-dependencies]
+slint-build = "1.19.0"
+winresource = "0.1"
+resvg = { version = "0.49", default-features = false }
+png = "0.18"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,0 +1,275 @@
+// Everything the UI shows comes from Rust through `Ui`; everything it does goes back through `Logic`.
+
+export struct NodeItem {
+    id: string,
+    header: bool,       // a group header row (subscription name) instead of a server
+    name: string,
+    detail: string,
+    flag: image,
+    has-flag: bool,
+    glyph: string,
+    ping: int,          // ms; -1 failed, -2 testing, -3 unreliable, -100 unknown
+    testing: bool,
+    selected: bool,
+    hidden: bool,
+    count: int,         // headers: servers in the group
+}
+
+export struct SubItem {
+    id: string,
+    name: string,
+    url: string,
+    logo: image,
+    has-logo: bool,
+    info: string,       // "12 servers · updated 5 min ago"
+    quota: string,      // "3.2 GB of 100 GB"
+    expire: string,     // "until 12.12 · 30 d"
+    used: float,        // 0..1, < 0 = unlimited
+    expired: bool,
+    used-up: bool,
+    updating: bool,
+    error: string,
+    pinned: bool,
+    announce: string,
+    support: string,
+    website: string,
+    auto-hours: int,
+    user-agent: string,
+    history: [float],   // usage chart, 0..1
+}
+
+export struct RuleItem { id: string, kind: string, value: string, action: string, enabled: bool }
+export struct LogItem { time: string, level: string, text: string }
+export struct SiteItem { site: string, ms: int, code: int, checked: bool }
+export struct WidgetItem { id: string, kind: string, x: int, y: int, w: int, h: int }
+export struct FieldItem { key: string, label: string, value: string }
+export struct Bar { value: float, label: string }
+export struct SpeedRow { name: string, down: string, up: string, ping: string, when: string }
+
+export struct Settings {
+    theme-mode: int,        // 0 system, 1 light, 2 dark
+    color-source: int,      // 0 windows accent, 1 custom
+    seed: color,
+    language: int,          // 0 system, 1 English, 2 Russian
+    connect-mode: int,      // 0 system proxy, 1 TUN
+    socks-port: string,
+    http-port: string,
+    allow-lan: bool,
+    sniffing: bool,
+    mux: bool,
+    ipv6: bool,
+    remote-dns: string,
+    direct-dns: string,
+    log-level: int,         // debug info warning error none
+    tun-strict-dns: bool,
+    geo-source: int,        // 0 v2fly/Loyalsoldier, 1 runetfreedom
+    user-agent: string,
+    client-spoof: int,      // 0 none, 1 Happ, 2 INCY
+    ping-url: string,
+    apply-panel-routing: bool,
+    minimize-to-tray: bool,
+    auto-connect: bool,
+    autostart: bool,
+    check-updates: bool,
+    notify-connection: bool,
+    notify-errors: bool,
+    notify-subscription: bool,
+    notify-updates: bool,
+    mask-addresses: bool,
+    show-hidden: bool,
+    server-sort: int,       // 0 manual, 1 name, 2 ping, 3 recent
+    hwid: string,
+}
+
+export struct Routing {
+    mode: int,              // 0 rule, 1 global, 2 direct
+    bypass-lan: bool,
+    bypass-ru: bool,
+    block-ads: bool,
+    proxy-blocked-ru: bool,
+    domain-strategy: int,   // AsIs, IPIfNonMatch, IPOnDemand
+    split-enabled: bool,
+    split-mode: int,        // 0 exclude (listed apps go direct), 1 include (only listed apps use the proxy)
+}
+
+export global Ui {
+    // connection
+    in property <int> status;               // 0 off, 1 busy, 2 on, 3 failed
+    in property <string> status-text;
+    in property <string> server-name;
+    in property <string> server-detail;
+    in property <image> server-flag;
+    in property <bool> server-has-flag;
+    in property <string> session-time;
+    in property <string> down-speed;
+    in property <string> up-speed;
+    in property <string> down-total;
+    in property <string> up-total;
+    in property <[float]> speed-down-values;
+    in property <[float]> speed-up-values;
+    in property <string> ping-now;
+    in property <[float]> ping-values;
+    in property <string> ping-stats;
+    in property <string> prep-text;          // "Downloading Xray core…"
+    in property <float> prep-progress: -1;
+    in property <bool> preparing;
+    // ip
+    in property <string> ip;
+    in property <string> ip-place;
+    in property <string> ip-isp;
+    in property <image> ip-flag;
+    in property <bool> ip-has-flag;
+    in property <bool> ip-loading;
+    // quota of the current subscription
+    in property <string> quota-title;
+    in property <string> quota-text;
+    in property <string> quota-expire;
+    in property <float> quota-used: -1;
+    in property <bool> has-quota;
+    in property <image> quota-logo;
+    in property <bool> quota-has-logo;
+    // usage (days)
+    in property <[Bar]> usage;
+    in property <string> usage-total;
+    in property <string> all-time;
+    // sites
+    in property <[SiteItem]> sites;
+    in property <bool> sites-checking;
+    in property <string> sites-text;
+    // speed test
+    in property <bool> speed-running;
+    in property <int> speed-phase;           // 0 prep 1 ping 2 down 3 up 4 done
+    in property <float> speed-fraction;
+    in property <string> speed-now;
+    in property <string> speed-down;
+    in property <string> speed-up;
+    in property <string> speed-ping;
+    in property <string> speed-node;
+    in property <[SpeedRow]> speed-history;
+
+    in property <[NodeItem]> nodes;
+    in property <[NodeItem]> top-nodes;      // servers widget: a short list
+    in property <int> node-count;
+    in property <bool> pinging;
+    in property <[SubItem]> subs;
+    in property <[RuleItem]> rules;
+    in property <[LogItem]> logs;
+    in property <[WidgetItem]> widgets;
+    in property <int> grid-rows: 8;
+    in property <[string]> split-apps;
+    in property <[string]> processes;
+    in property <Settings> settings;
+    in property <Routing> routing;
+    in property <string> core-version;
+    in property <string> app-version;
+    in property <bool> is-admin;
+
+    // snackbar
+    in property <string> message;
+    in property <string> message-action;
+    in property <int> message-serial;
+
+    // dialogs
+    in property <bool> show-error;
+    in property <string> error-title;
+    in property <string> error-hint;
+    in property <string> error-details;
+    in property <bool> need-admin;
+    in property <bool> need-amnezia;
+    in property <bool> pending-import;
+    in property <string> pending-summary;
+    in property <bool> update-available;
+    in property <string> update-version;
+    in property <string> update-notes;
+    in property <float> update-progress: -1;
+    in property <bool> update-ready;
+    in property <bool> whats-new;
+    in property <string> whats-new-version;
+    in property <string> whats-new-notes;
+    in property <bool> show-qr;
+    in property <image> qr-image;
+    in property <string> qr-title;
+    in property <[FieldItem]> editor-fields;
+    in property <string> editor-title;
+    in property <bool> show-editor;
+}
+
+export global Logic {
+    // window
+    callback minimize();
+    callback toggle-maximize();
+    callback close();
+    callback drag();
+    callback toggle-mini();
+    callback open-url(string);
+    callback copy(string);
+    // connection
+    callback toggle-connect();
+    callback set-connect-mode(int);
+    callback set-routing-mode(int);
+    // servers
+    callback select-node(string);
+    callback ping-all();
+    callback ping-node(string);
+    callback ping-current();
+    callback node-menu(string, string);      // id, action: copy | qr | hide | unhide | delete | edit | speed
+    callback search(string);
+    callback set-sort(int);
+    callback toggle-group(string);
+    // import
+    callback import-text(string) -> int;
+    callback import-clipboard();
+    callback import-file();
+    callback scan-screen();
+    callback confirm-import(bool);
+    // subscriptions
+    callback add-sub(string, string);
+    callback update-sub(string);
+    callback update-all-subs();
+    callback edit-sub(string, string, string, int, string);  // id, name, url, hours, user-agent
+    callback delete-sub(string);
+    callback pin-sub(string);
+    // routing
+    callback set-routing-bool(string, bool);
+    callback set-domain-strategy(int);
+    callback save-rule(string, string, string, string);       // id ("" = new), kind, value, action
+    callback toggle-rule(string, bool);
+    callback delete-rule(string);
+    callback move-rule(string, int);
+    callback apply-preset(string);
+    callback split-add(string);
+    callback split-remove(string);
+    callback refresh-processes();
+    // settings
+    callback set-bool(string, bool);
+    callback set-int(string, int);
+    callback set-text(string, string);
+    callback set-seed(color);
+    callback update-core();
+    callback update-geo();
+    callback check-updates();
+    callback install-update();
+    callback update-in-background();
+    callback dismiss-update();
+    callback open-data-folder();
+    callback relaunch-admin();
+    callback install-amnezia();
+    // logs
+    callback clear-logs();
+    callback copy-logs();
+    callback set-log-filter(int);
+    // home widgets
+    callback widget-move(string, int, int);
+    callback widget-resize(string, int, int);
+    callback widget-add(string);
+    callback widget-remove(string);
+    callback widgets-reset();
+    callback refresh-ip();
+    callback check-sites();
+    callback set-sites(string);
+    callback run-speed-test();
+    // misc
+    callback message-action();
+    callback dismiss(string);                // which dialog
+    callback editor-save([FieldItem]);
+}
