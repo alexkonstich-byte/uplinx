@@ -107,6 +107,20 @@ fun FrameWindowScope.UplinxTitleBar(app: AppController, maximizer: WindowMaximiz
                 }
             }
         }
+        // background update: progress while downloading, then a restart button
+        val progress by app.updateProgress.collectAsState()
+        val ready by app.updateReady.collectAsState()
+        AnimatedVisibility(progress != null || ready != null, enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
+            val p = progress
+            if (ready != null) FilledTonalButton({ app.installUpdate(onClose) }, Modifier.height(30.dp).padding(end = 8.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
+                Icon(Icons.Rounded.SystemUpdateAlt, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+                Text(L("Перезапустить для обновления"), style = MaterialTheme.typography.labelMedium)
+            } else if (p != null) Row(Modifier.padding(end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(progress = { p }, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(6.dp))
+                Text("↓ ${(p * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+            }
+        }
         WindowButton(Icons.Rounded.Remove, L("Свернуть"), onMinimize)
         WindowButton(if (maximizer.maximized) Icons.Rounded.FilterNone else Icons.Rounded.CropSquare,
             if (maximizer.maximized) L("Восстановить") else L("Развернуть"), maximizer::toggle)

@@ -294,6 +294,8 @@ class AppController(private val scope: CoroutineScope) {
         runCatching { SystemProxy.restore() }
         core.stopBlocking()
         runCatching { Storage.save(_state.value) }
+        // a background-downloaded update installs when the app quits
+        updateReady.value?.let { p -> updateReady.value = null; runCatching { Updater.apply(p) } }
     }
 
     private fun suggestReconnect() {
@@ -737,13 +739,46 @@ class AppController(private val scope: CoroutineScope) {
             .onFailure { if (manual) notify(L("Не удалось проверить обновления: %1", it.message)) }
     }
 
+    /** A downloaded update waiting to be applied (on restart or when the app quits). */
+    val updateReady = MutableStateFlow<Updater.Prepared?>(null)
+    private var updateJob: Job? = null
+
+    private fun ensureDownload(): Job? {
+        val u = update.value ?: return null
+        if (updateReady.value?.version == u.version) return null
+        updateJob?.takeIf { it.isActive }?.let { return it }
+        if (u.assetUrl == null && u.zipUrl == null) { WinUtil.openUrl(u.url); return null }
+        return scope.launch(Dispatchers.IO) {
+            runCatching {
+                updateProgress.value = 0f
+                Updater.prepare(u) { updateProgress.value = it }
+            }.onSuccess { p ->
+                updateProgress.value = null
+                updateReady.value = p
+            }.onFailure {
+                updateProgress.value = null
+                notify(L("Ошибка загрузки обновления: %1", it.message))
+            }
+        }.also { updateJob = it }
+    }
+
+    /** Download (if needed), then restart into the new version. */
     fun installUpdate(exit: () -> Unit) = scope.launch(Dispatchers.IO) {
-        val u = update.value ?: return@launch
-        if (u.assetUrl == null) { WinUtil.openUrl(u.url); return@launch }
-        runCatching {
-            updateProgress.value = 0f
-            Updater.downloadAndRun(u) { updateProgress.value = it }
-        }.onSuccess { shutdown(); exit() }
-            .onFailure { updateProgress.value = null; notify(L("Ошибка загрузки обновления: %1", it.message)) }
+        ensureDownload()?.join()
+        val p = updateReady.value ?: return@launch
+        runCatching { Updater.apply(p) }.onSuccess { updateReady.value = null; shutdown(); exit() }
+            .onFailure { notify(L("Ошибка загрузки обновления: %1", it.message)) }
+    }
+
+    /** Keep working; the update downloads quietly and installs on restart or when Uplinx quits. */
+    fun updateInBackground(exit: () -> Unit) {
+        showUpdateDetails.value = false
+        val job = ensureDownload()
+        scope.launch {
+            job?.join()
+            val p = updateReady.value ?: return@launch
+            toast(L("Обновление %1 готово", p.version), L("Установится при перезапуске Uplinx"))
+            notify(L("Обновление %1 готово", p.version), L("Перезапустить")) { installUpdate(exit) }
+        }
     }
 }

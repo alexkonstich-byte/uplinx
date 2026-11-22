@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -79,7 +80,7 @@ private fun SpinningBadge(icon: androidx.compose.ui.graphics.vector.ImageVector)
 fun UpdateDialog(app: AppController, u: UpdateInfo, onExit: () -> Unit, onDismiss: () -> Unit) {
     val progress by app.updateProgress.collectAsState()
     AlertDialog(
-        onDismissRequest = { if (progress == null) onDismiss() },
+        onDismissRequest = onDismiss,
         icon = { SpinningBadge(Icons.Rounded.SystemUpdate) },
         title = { Text(L("Доступна версия %1", u.version)) },
         text = {
@@ -98,11 +99,15 @@ fun UpdateDialog(app: AppController, u: UpdateInfo, onExit: () -> Unit, onDismis
                 }
             }
         },
-        confirmButton = { Button({ app.installUpdate(onExit) }, enabled = progress == null) { Text(L("Обновить и перезапустить")) } },
+        confirmButton = { Button({ app.installUpdate(onExit) }) { Text(L("Обновить и перезапустить")) } },
         dismissButton = {
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton({ WinUtil.openUrl(u.url) }) { Text("GitHub") }
-                TextButton(onDismiss, enabled = progress == null) { Text(L("Позже")) }
+                TextButton(onDismiss) { Text(L("Позже")) }
+                // the download keeps going after the dialog closes; it installs on restart or quit
+                OutlinedButton({ app.updateInBackground(onExit) }) {
+                    Icon(Icons.Rounded.CloudDownload, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(L("В фоне"))
+                }
             }
         },
     )

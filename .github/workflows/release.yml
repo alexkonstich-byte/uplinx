@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           v="${GITHUB_REF_NAME#v}"
-          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || v="1.6.2"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || v="1.6.3"
           echo "APP_VERSION=$v" >> "$GITHUB_ENV"
 
       - name: Test

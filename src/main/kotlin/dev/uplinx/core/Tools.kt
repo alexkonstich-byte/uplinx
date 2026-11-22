@@ -86,7 +86,7 @@ object Processes {
         .sortedBy { it.lowercase() }
 }
 
-data class UpdateInfo(val version: String, val notes: String, val url: String, val assetUrl: String?, val zipUrl: String? = null)
+data class UpdateInfo(val version: String, val notes: String, val url: String, val assetUrl: String?, val zipUrl: String? = null, val msiUrl: String? = null)
 
 /**
  * Updates from this project's GitHub Releases. Installed copies download and run the setup .exe;
@@ -120,7 +120,7 @@ object Updater {
             ?.get("browser_download_url")?.jsonPrimitive?.content
         return UpdateInfo(
             o["tag_name"]!!.jsonPrimitive.content.trimStart('v'), o["body"]?.jsonPrimitive?.contentOrNull.orEmpty(), o["html_url"]!!.jsonPrimitive.content,
-            asset { it.endsWith(".exe") }, asset { it.endsWith(".zip") && "portable" in it },
+            asset { it.endsWith(".exe") }, asset { it.endsWith(".zip") && "portable" in it }, asset { it.endsWith(".msi") },
         )
     }
 
@@ -149,8 +149,11 @@ object Updater {
         }
     }
 
-    /** Downloads the update and starts whatever applies it; the caller then exits. */
-    fun downloadAndRun(info: UpdateInfo, onProgress: (Float) -> Unit) {
+    /** A downloaded update, ready to apply: an installer, or (portable) a script that swaps files after exit. */
+    data class Prepared(val version: String, val file: File, val portable: Boolean)
+
+    /** Downloads (and for portable builds unpacks) the update. Nothing is applied yet. */
+    fun prepare(info: UpdateInfo, onProgress: (Float) -> Unit): Prepared {
         val dir = appDir
         if (isPortable && dir != null && info.zipUrl != null) {
             val work = File(Paths.home, "update").apply { deleteRecursively(); mkdirs() }
@@ -164,22 +167,47 @@ object Updater {
                     if (e.isDirectory) f.mkdirs() else { f.parentFile.mkdirs(); f.outputStream().use { z.copyTo(it) } }
                 }
             }
+            zip.delete()
             val src = File(work, "new").listFiles()?.singleOrNull { it.isDirectory } ?: File(work, "new")
-            // wait for this process to exit, mirror the new files over the app folder, start it again
+            // waits for this process to exit, mirrors the new files over the app folder, starts it again
             val script = File(work, "apply.ps1")
-            script.writeText("""
-                ${'$'}ErrorActionPreference = 'SilentlyContinue'
-                Wait-Process -Id ${ProcessHandle.current().pid()} -Timeout 60
-                robocopy "${src.path}" "${dir.path}" /MIR /R:3 /W:1 /NFL /NDL /NJH /NJS | Out-Null
-                New-Item -ItemType File -Force "${dir.path}\portable.txt" | Out-Null
-                Start-Process "${File(dir, "Uplinx.exe").path}"
-            """.trimIndent())
-            ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", script.path).start()
-            return
+            val dollar = "$"
+            script.writeText(listOf(
+                "${dollar}ErrorActionPreference = 'SilentlyContinue'",
+                "Wait-Process -Id ${ProcessHandle.current().pid()} -Timeout 120",
+                "robocopy \"${src.path}\" \"${dir.path}\" /MIR /R:3 /W:1 /NFL /NDL /NJH /NJS | Out-Null",
+                "New-Item -ItemType File -Force \"${File(dir, "portable.txt").path}\" | Out-Null",
+                "Start-Process \"${File(dir, "Uplinx.exe").path}\"",
+            ).joinToString("\r\n"))
+            return Prepared(info.version, script, portable = true)
+        }
+        // installed copy: a quiet in-place MSI upgrade (no wizard), then the app starts again
+        if (info.msiUrl != null) {
+            val work = File(Paths.home, "update").apply { deleteRecursively(); mkdirs() }
+            val msi = File(work, "Uplinx-${info.version}.msi")
+            download(info.msiUrl, msi, onProgress)
+            // per-user install: after the upgrade the app lives in %LOCALAPPDATA%\Uplinx (also when coming from MyProxy)
+            val exe = File(File(System.getenv("LOCALAPPDATA") ?: "", "Uplinx"), "Uplinx.exe")
+            val dollar = "$"
+            val log = File(work, "install.log")
+            val script = File(work, "apply.ps1")
+            script.writeText(listOf(
+                "${dollar}ErrorActionPreference = 'SilentlyContinue'",
+                "Wait-Process -Id ${ProcessHandle.current().pid()} -Timeout 120",
+                "Start-Process msiexec.exe -ArgumentList '/i', '\"${msi.path}\"', '/passive', '/norestart', '/l*v', '\"${log.path}\"' -Wait",
+                "Start-Process \"${exe.path}\"",
+            ).joinToString("\r\n"))
+            return Prepared(info.version, script, portable = true)
         }
         val url = info.assetUrl ?: error(L("В релизе нет установщика"))
         val target = File(Paths.home, "Uplinx-${info.version}.exe")
         download(url, target, onProgress)
-        ProcessBuilder(target.path).start()
+        return Prepared(info.version, target, portable = false)
+    }
+
+    /** Starts applying a prepared update; the caller exits right after. */
+    fun apply(p: Prepared) {
+        if (p.portable) ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", p.file.path).start()
+        else ProcessBuilder(p.file.path).start()
     }
 }

@@ -1,13 +1,16 @@
-## Uplinx 1.6.2
+## Uplinx 1.6.3
 
-**Download:** `Uplinx-1.6.2-setup.exe` (installer), `Uplinx-1.6.2.msi`, or `Uplinx-1.6.2-portable-win64.zip`.
+**Download:** `Uplinx-1.6.3-setup.exe` (installer), `Uplinx-1.6.3.msi`, or `Uplinx-1.6.3-portable-win64.zip`.
 
-### Fixed
-- **Home widgets jumped back.** After you added or removed widgets, dragging or editing one restored the deleted widgets and dropped the new ones. Layout changes now always apply to the current layout.
-- **Task Manager name.** The process shows as **Uplinx Client** (it used to show a long description).
-- **Segmented buttons** no longer wrap a label onto two lines. The geo-database switch shows *v2fly* and *runetfreedom (RU)*.
+### Update in the background
+- The update window has a new **In background** button. The window closes and you keep working while the update downloads.
+- The title bar shows the progress (↓ 42%), then a **Restart to update** button. A Windows notification tells you when the update is ready.
+- If you don't restart, the update installs by itself when you quit Uplinx.
 
-### Faster and lighter
-- **CPU:** decorative motion (living background, spinning button, orbits, title-bar pulse, wavy progress bars) pauses whenever the window is in the background or minimized. A minimized Uplinx now uses ~0% CPU (it was ~3–16%); in front it uses about 4%.
-- Idle animations that ran even when unused are gone: the edit-mode wiggle, the subscription sync spinner and the site-check pulse.
-- **Memory:** a smaller Java heap that is returned to Windows when idle, about 400 MB instead of ~800 MB.
+### Quiet in-place updates
+- Updates no longer open the installer wizard (with its "remove the old version, install the new one" screens).
+- Uplinx closes, upgrades itself silently (`msiexec /passive`: just a small progress bar, no admin prompt) and **starts again on its own**.
+- Your servers, subscriptions and settings stay as they were.
+- Portable builds keep updating themselves from the zip.
+
+**Note:** this is the last update that still opens the installer. Quiet updates apply from 1.6.3 to all later versions.

@@ -147,6 +147,10 @@ private val EN: Map<String, String> = mapOf(
     "Сессия" to "Session",
     "Скорость" to "Speed",
     "Текущий сервер" to "Current server",
+    "В фоне" to "In background",
+    "Обновление %1 готово" to "Update %1 is ready",
+    "Установится при перезапуске Uplinx" to "It installs when Uplinx restarts",
+    "Перезапустить для обновления" to "Restart to update",
     // ---- 1.6: title bar, split tunnelling, notifications, speed test
     "Включить TUN" to "Turn on TUN",
     "Восстановить" to "Restore",
