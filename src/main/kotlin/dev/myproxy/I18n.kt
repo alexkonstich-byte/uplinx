@@ -14,6 +14,7 @@ enum class Lang { RU, EN }
 object I18n {
     var lang by mutableStateOf(systemLang())
     fun systemLang() = if (Locale.getDefault().language in setOf("ru", "uk", "be", "kk")) Lang.RU else Lang.EN
+    val locale: Locale get() = if (lang == Lang.RU) Locale.forLanguageTag("ru") else Locale.ENGLISH
     fun apply(setting: String) { lang = when (setting) { "ru" -> Lang.RU; "en" -> Lang.EN; else -> systemLang() } }
 }
 

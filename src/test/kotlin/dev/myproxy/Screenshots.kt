@@ -24,15 +24,15 @@ object Screenshots {
         val out = File(System.getProperty("shots.out") ?: "build/screens").apply { mkdirs() }
         val now = System.currentTimeMillis()
         val sub = Subscription(name = "Nebula VPN", url = "https://example.com/sub/abc", upload = 3_400_000_000, download = 41_200_000_000,
-            total = 100_000_000_000, expire = now / 1000 + 86400 * 23, updatedAt = now - 12 * 60_000, announce = "Добавлены серверы в Финляндии 🇫🇮")
+            total = 100_000_000_000, expire = now / 1000 + 86400 * 23, updatedAt = now - 12 * 60_000, announce = "New servers in Finland 🇫🇮")
         val nodes = listOf(
-            ProxyNode(name = "🇳🇱 Нидерланды · Амстердам", lastUsedAt = 1, protocol = Protocol.VLESS, address = "nl1.nebula.example", port = 443, security = "reality", subscriptionId = sub.id),
-            ProxyNode(name = "🇩🇪 Германия · Франкфурт", protocol = Protocol.VLESS, address = "de1.nebula.example", port = 443, network = "xhttp", security = "tls", subscriptionId = sub.id),
-            ProxyNode(name = "🇫🇮 Финляндия · Хельсинки", protocol = Protocol.TROJAN, address = "fi1.nebula.example", port = 443, network = "grpc", security = "tls", subscriptionId = sub.id),
-            ProxyNode(name = "🇺🇸 США · Нью-Йорк", protocol = Protocol.HYSTERIA2, address = "us1.nebula.example", port = 8443, security = "tls", subscriptionId = sub.id),
-            ProxyNode(name = "🇰🇿 Казахстан", protocol = Protocol.SHADOWSOCKS, address = "kz.nebula.example", port = 8388, subscriptionId = sub.id),
-            ProxyNode(name = "Домашний AmneziaWG", protocol = Protocol.WIREGUARD, address = "203.0.113.5", port = 51820, awg = mapOf("Jc" to "4", "S1" to "52", "H1" to "1234567")),
-            ProxyNode(name = "Мой VPS", protocol = Protocol.VMESS, address = "1.2.3.4", port = 8443, network = "ws", security = "tls"),
+            ProxyNode(name = "🇳🇱 Netherlands · Amsterdam", lastUsedAt = 1, protocol = Protocol.VLESS, address = "nl1.nebula.example", port = 443, security = "reality", subscriptionId = sub.id),
+            ProxyNode(name = "🇩🇪 Germany · Frankfurt", protocol = Protocol.VLESS, address = "de1.nebula.example", port = 443, network = "xhttp", security = "tls", subscriptionId = sub.id),
+            ProxyNode(name = "🇫🇮 Finland · Helsinki", protocol = Protocol.TROJAN, address = "fi1.nebula.example", port = 443, network = "grpc", security = "tls", subscriptionId = sub.id),
+            ProxyNode(name = "🇺🇸 USA · New York", protocol = Protocol.HYSTERIA2, address = "us1.nebula.example", port = 8443, security = "tls", subscriptionId = sub.id),
+            ProxyNode(name = "🇰🇿 Kazakhstan", protocol = Protocol.SHADOWSOCKS, address = "kz.nebula.example", port = 8388, subscriptionId = sub.id),
+            ProxyNode(name = "Home AmneziaWG", protocol = Protocol.WIREGUARD, address = "203.0.113.5", port = 51820, awg = mapOf("Jc" to "4", "S1" to "52", "H1" to "1234567")),
+            ProxyNode(name = "My VPS", protocol = Protocol.VMESS, address = "1.2.3.4", port = 8443, network = "ws", security = "tls"),
         )
         val state = AppState(
             settings = AppSettings(selectedNodeId = nodes[0].id, colorSource = ColorSource.CUSTOM, seedColor = (System.getProperty("shots.seed") ?: "FF6750A4").toLong(16),

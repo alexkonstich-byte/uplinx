@@ -229,8 +229,8 @@ data class AppSettings(
     val pingUrl: String = "https://www.gstatic.com/generate_204",
     val selectedNodeId: String? = null,
     val clientSpoof: ClientSpoof = ClientSpoof.NONE,
-    /** "system", "ru" or "en". */
-    val language: String = "system",
+    /** "system", "ru" or "en". English by default. */
+    val language: String = "en",
     /** Version whose "What's new" was already shown. */
     val lastSeenVersion: String = "",
     /** Random per-install device id sent as x-hwid. */

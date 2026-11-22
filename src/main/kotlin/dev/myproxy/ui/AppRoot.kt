@@ -92,7 +92,7 @@ fun AppRoot(app: AppController, onExit: () -> Unit, initial: Screen = Screen.HOM
                                 Icon(if (sel) s.iconSelected else s.icon, s.title)
                             }
                         },
-                        label = { Text(s.title) },
+                        label = { Text(if (s == Screen.SUBS && dev.myproxy.I18n.lang == dev.myproxy.Lang.EN) "Subs" else s.title, maxLines = 1, softWrap = false) },
                     )
                 }
                 Spacer(Modifier.height(12.dp))

@@ -232,7 +232,7 @@ private fun SubscriptionQuotaCard(name: String, used: Long, total: Long, expire:
             }
             if (expire > 0) {
                 val days = (expire * 1000 - System.currentTimeMillis()) / 86_400_000
-                val date = DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.forLanguageTag("ru")).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(expire))
+                val date = DateTimeFormatter.ofPattern("d MMM yyyy", dev.myproxy.I18n.locale).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(expire))
                 Text(if (days >= 0) L("Действует до %1 · осталось %2 дн.", date, days) else L("Истекла %1", date), style = MaterialTheme.typography.bodySmall,
                     color = if (days < 3) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer)
             }

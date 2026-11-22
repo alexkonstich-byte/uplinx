@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.myproxy"
-version = (findProperty("appVersion") as String?) ?: "1.2.0"
+version = (findProperty("appVersion") as String?) ?: "1.2.1"
 
 dependencies {
     implementation(compose.desktop.currentOs)

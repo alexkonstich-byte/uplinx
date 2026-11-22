@@ -1,7 +1,9 @@
 # MyProxy
 
-Прокси-клиент для Windows в стиле **Material You 3 Expressive**. Работает на ядре **Xray-core**.
-Подписки, ссылки, ключи Amnezia, WireGuard и AmneziaWG, системный прокси и TUN.
+**English** · [Русский](README.ru.md)
+
+A proxy client for Windows built with **Material You 3 Expressive** and powered by **Xray-core**.
+It handles subscriptions, share links, Amnezia keys, WireGuard / AmneziaWG, Clash, sing-box and Xray configs, in system proxy or TUN mode.
 
 <p>
   <img src="docs/screenshots/home-light.png" width="49%">
@@ -16,81 +18,84 @@
   <img src="docs/screenshots/settings.png" width="49%">
 </p>
 
-## Возможности
+## Download
 
-**Импорт всего подряд.** Поддерживаются:
-- ссылки `vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`, `http(s)://`, `hy2://` / `hysteria2://`, `wireguard://`;
-- ключи **Amnezia** `vpn://`: из них берутся контейнеры AWG, WireGuard и Xray;
-- файлы `.conf` WireGuard и **AmneziaWG**;
-- **JSON-конфиги Xray**, одиночные и массивом, включая **балансировщики и цепочки** (такой конфиг запускается целиком);
-- **Clash/Mihomo YAML** вместе с правилами, **sing-box JSON**, JSONC, JSON-массивы ссылок;
-- пулы прокси `host:port:user:pass`, вложенные подписки, профили маршрутизации в формате Happ;
-- подписки в base64 или обычным списком.
+Get the installer (`.exe` / `.msi`) or the portable `.zip` from [Releases](https://github.com/alexkonstich-byte/myproxy/releases/latest).
+Java is bundled, and the installer doesn't need administrator rights. The Xray core, geo databases and wintun are downloaded on first connect.
 
-Импортировать можно через Ctrl+V в любом месте окна, перетаскиванием файлов в окно, через «Открыть файл…», **QR-кодом с экрана** или из картинки, или по диплинку `myproxy://add/<ссылка>` (с подтверждением).
+## Features
 
-## Скачать
+**Import anything.**
+- `vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`, `http(s)://`, `hy2://` / `hysteria2://`, `wireguard://` links;
+- **Amnezia** `vpn://` keys (AWG, WireGuard and Xray containers);
+- WireGuard and **AmneziaWG** `.conf` files;
+- **Xray JSON**, including **balancers and chains** (run as a whole config);
+- **Clash / Mihomo YAML** with rules, **sing-box JSON**, JSONC, JSON arrays of links;
+- `host:port:user:pass` proxy lists, nested subscriptions, Happ-compatible routing profiles;
+- base64 or plain subscriptions.
 
-Установщик и портативная версия лежат в [Releases](https://github.com/alexkonstich-byte/myproxy/releases/latest).
+You can import with Ctrl+V anywhere, drag & drop, *Open file…*, **a QR code on screen** or in an image, or a `myproxy://add/<link>` deep link (asks for confirmation).
 
-**Подписки.** Учитываются заголовки `subscription-userinfo` (трафик и срок действия), `profile-title`, `profile-update-interval`, `support-url` и `announce`. Подписки обновляются автоматически, а при обновлении выбранный сервер сохраняется.
+**Subscriptions.**
+- Reads `subscription-userinfo` (traffic and expiry), `profile-title`, `profile-update-interval`, `profile-logo`, `support-url`, `announce` and the `routing` profile.
+- Updates automatically, pins, and flags expired or used-up subscriptions.
+- If a panel answers *"App not supported"*, MyProxy retries as another client (Happ, v2rayN, sing-box, Clash), remembers the one that worked, and sends device headers (`x-hwid`…) for panels with device limits.
 
-**Режимы.**
-- *Системный прокси* (WinINet). Прежние настройки прокси сохраняются и восстанавливаются даже после падения приложения.
-- *TUN* через встроенный `tun` inbound Xray (wintun) с `autoSystemRoutingTable` и WFP-защитой от утечек DNS.
+**Modes.**
+- *System proxy* (WinINet). The previous proxy settings are saved and restored, even after a crash.
+- *TUN* via Xray's built-in `tun` inbound (wintun) with automatic routes and WFP DNS-leak protection.
 
-**Маршрутизация.** Три режима: по правилам, глобальный, напрямую. Есть пресеты: блок рекламы, РФ напрямую, «через прокси только заблокированное» на гео-базах runetfreedom. Свои правила задаются по домену, IP, geosite, geoip, **процессу** или порту.
+**Routing.** Three modes: by rules, global and direct.
+- Presets: block ads, Russian sites direct, proxy only blocked sites (runetfreedom geo).
+- Custom rules by domain, IP, geosite, geoip, **process / app** or port.
 
-**AmneziaWG.** Конфиги только с Jc/Jmin/Jmax работают прямо в Xray (маска `noise`), с маршрутизацией. Полный AWG с S1/S2/H1–H4 запускается через официальный движок AmneziaWG как туннельная служба.
+**Latency.** A real URL test of every server through a throwaway Xray process, without touching system settings.
+- Parallelism adapts to the list size and reachable servers are tested first.
+- Balancers show their best member.
+- Old values are struck through while a new test runs.
 
-**Пинг.** Реальный URL-тест каждого сервера во временном Xray, без изменения системных настроек. Параллельность подстраивается под размер списка, у балансировщика показывается лучший участник, старое значение зачёркивается на время замера.
+**AmneziaWG.** Configs with only Jc/Jmin/Jmax run inside Xray (`noise` mask), with routing. Full AWG (S1/S2/H1–H4) runs through the official AmneziaWG engine.
 
-**Серверы и подписки.**
-- сортировка по имени, пингу или последнему использованию;
-- скрытие серверов (переживает обновления) и маскировка адресов;
-- флаги Twemoji;
-- логотипы подписок из `profile-logo`, закрепление, анонсы и ссылки сервиса;
-- метка у истёкших подписок;
-- выбор клиента для панелей: Happ, INCY или без маскировки.
+**Material You.**
+- The palette comes from the Windows accent colour (or your own), with 9 palette styles and an AMOLED option.
+- The background is alive: M3 Expressive shapes morph and drift, with parallax between screens.
+- The connect button always spins, and shapes orbit it while connected.
+- The Windows 11 title bar is themed, and flags appear as avatars.
+- Fonts: **Unbounded** for headlines and **Rubik** for text.
 
-**Остальное.**
-- мини-окно поверх всех окон;
-- выбор приложений для правил;
-- ошибки понятными словами;
-- QR-коды, экспорт ссылок и `.conf`, просмотр сгенерированного конфига, редактор сервера (в том числе сырого Xray JSON);
-- логи ядра, скорость и график, статистика трафика за всё время;
-- трей, автозапуск, проверка обновлений.
+**More.**
+- English and Russian UI, switchable live;
+- mini always-on-top window, tray, autostart;
+- QR codes and link / `.conf` export;
+- server editor (including raw Xray JSON);
+- logs, live speed chart, all-time traffic stats;
+- plain-language errors with details.
 
-**Языки.** Русский и English, переключаются на лету в настройках.
+**Updates.**
+- Checks GitHub Releases on start and every 6 hours.
+- Shows the full release notes before updating and installs in one click.
+- The portable build updates itself.
+- *What's new* appears after an update.
 
-**Обновления.** Приложение проверяет GitHub Releases при запуске и каждые 6 часов, показывает список изменений и ставит обновление в один клик. Портативная версия обновляет себя сама. После обновления открывается экран «Что нового».
+## Build
 
-**Подписки «App not supported».** Если панель не узнала клиента, MyProxy сам подбирает User-Agent (Happ, v2rayN, sing-box, Clash) и отправляет заголовки устройства для панелей с лимитом устройств.
-
-**Material You.** Живой фон из фигур M3 Expressive с параллаксом, всегда вращающаяся кнопка подключения с орбитой из фигурок, шапка окна Windows 11 в цветах темы. Палитра строится из акцентного цвета Windows (MaterialKolor) и меняется на лету. Можно выбрать свой цвет, один из 9 стилей палитры и AMOLED-тему. Используются компоненты M3 Expressive: морфинг фигур, LoadingIndicator, волнистые прогресс-бары, ButtonGroup, MotionScheme.expressive().
-
-## Сборка
-
-Нужен JDK 25.
-
-```
-gradlew run                  # запустить
-gradlew test                 # тесты парсеров и генератора конфига
-gradlew packageExe           # установщик .exe (packageMsi — .msi)
-```
-
-Ядро Xray, гео-базы и wintun скачиваются при первом подключении в `%APPDATA%\MyProxy\core`.
-Для TUN и AmneziaWG нужны права администратора: приложение само предложит перезапуститься с ними.
-
-Скриншоты рендерятся офскрин на демо-данных, без окна и без подключения:
+Requires JDK 25.
 
 ```
-gradlew screenshots -Dmyproxy.home=<временная папка> -Dshots.out=<папка>
+gradlew run                  # run
+gradlew test                 # parser and config-generator tests
+gradlew packageExe           # .exe installer (packageMsi for .msi)
 ```
 
-## Стек
+UI screenshots are rendered offscreen with demo data, with no window and no connection:
 
-Kotlin, Compose Multiplatform Desktop, Material 3 (Expressive), MaterialKolor, kotlinx.serialization, SnakeYAML, JNA, ZXing, Xray-core.
-Флаги — [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0).
+```
+gradlew screenshots -Dmyproxy.home=<temp dir> -Dshots.out=<dir> -Dshots.lang=en
+```
 
-Релиз собирается GitHub Actions по тегу `v*`: `.exe`, `.msi`, portable-zip и `SHA256SUMS.txt`.
+Releases are built by GitHub Actions on a `v*` tag: `.exe`, `.msi`, portable `.zip` and `SHA256SUMS.txt`.
+
+## Stack & credits
+
+Kotlin, Compose Multiplatform Desktop, Material 3 Expressive, MaterialKolor, kotlinx.serialization, SnakeYAML, JNA, ZXing, [Xray-core](https://github.com/XTLS/Xray-core).
+Flags: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0). Fonts: [Unbounded](https://github.com/googlefonts/unbounded) and [Rubik](https://github.com/googlefonts/rubik) (SIL OFL 1.1).

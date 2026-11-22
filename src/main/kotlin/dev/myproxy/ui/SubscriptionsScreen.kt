@@ -131,7 +131,7 @@ private fun SubscriptionCard(
             }
             if (s.expire > 0) {
                 val days = (s.expire * 1000 - System.currentTimeMillis()) / 86_400_000
-                val date = DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.forLanguageTag("ru")).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(s.expire))
+                val date = DateTimeFormatter.ofPattern("d MMMM yyyy", dev.myproxy.I18n.locale).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(s.expire))
                 AssistChip(onClick = {}, label = { Text(if (days >= 0) L("До %1 · %2 дн.", date, days) else L("Истекла %1", date)) },
                     leadingIcon = { Icon(Icons.Rounded.Event, null, Modifier.size(18.dp)) }, modifier = Modifier.padding(top = 8.dp),
                     colors = if (days < 3) AssistChipDefaults.assistChipColors(labelColor = cs.error, leadingIconContentColor = cs.error) else AssistChipDefaults.assistChipColors())
