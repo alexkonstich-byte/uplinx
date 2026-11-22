@@ -4,7 +4,7 @@ import "fonts/Unbounded.ttf";
 import "fonts/MaterialIconsRound-Regular.otf";
 import { ListView, ScrollView } from "std-widgets.slint";
 import { Shapes } from "shapes.slint";
-import { Theme, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Shape, Avatar, Field, Area, Progress, Dialog } from "theme.slint";
+import { Theme, Ds, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Shape, Avatar, Field, Area, Progress, Dialog } from "theme.slint";
 import { Ui, Logic, FieldItem } from "data.slint";
 import { Nav, ServersPage, SubsPage, RoutingPage, LogsPage, SettingsPage } from "pages.slint";
 import { HomePage, ConnectButton } from "home.slint";
@@ -51,7 +51,7 @@ component TitleBar inherits Rectangle {
             y: (parent.height - self.height) / 2;
             height: 24px;
             width: st.preferred-width + 34px;
-            border-radius: 12px;
+            border-radius: self.height / 2;
             background: Ui.status == 2 ? Theme.primary-container : Theme.surface-container-highest;
             animate background { duration: 300ms; }
             Rectangle { x: 10px; width: 8px; height: 8px; border-radius: 4px; background: Ui.status == 2 ? Theme.good : (Ui.status == 1 ? Theme.warn : (Ui.status == 3 ? Theme.error : Theme.on-surface-variant)); }
@@ -81,7 +81,7 @@ component RailItem inherits VerticalLayout {
     Rectangle {
         height: 32px; width: 56px;
         x: (parent.width - self.width) / 2;
-        border-radius: 16px;
+        border-radius: self.height / 2;
         background: root.selected ? Theme.secondary-container : (ta.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent);
         animate background { duration: 200ms; easing: ease-out; }
         Icon { glyph: root.glyph; color: root.selected ? Theme.on-secondary-container : Theme.on-surface-variant; }
@@ -93,12 +93,12 @@ component RailItem inherits VerticalLayout {
 component Snackbar inherits Rectangle {
     height: 52px;
     width: min(lay.preferred-width, 640px);
-    border-radius: 12px;
+    border-radius: Ds.r-s;
     background: Theme.inverse-surface;
     drop-shadow-blur: 12px;
     drop-shadow-color: #00000050;
     lay := HorizontalLayout {
-        padding-left: 18px; padding-right: 8px; spacing: 8px;
+        padding-left: Ds.s4; padding-right: Ds.s2; spacing: Ds.s2;
         Text { text: Ui.message; color: Theme.inverse-on-surface; font-size: 14px; vertical-alignment: center; overflow: elide; }
         if Ui.message-action != "": Rectangle {
             width: at.preferred-width + 24px;
@@ -133,13 +133,13 @@ export component AppWindow inherits Window {
                 width: 96px;
                 background: Theme.surface-container;
                 VerticalLayout {
-                    padding-top: 12px; padding-bottom: 16px; spacing: 14px;
+                    padding-top: Ds.s3; padding-bottom: Ds.s4; spacing: Ds.s3;
                     // the logo in its container; clicking it opens Home
                     Rectangle {
                         height: 56px;
                         Rectangle {
                             width: 56px; height: 56px;
-                            border-radius: logo-ta.pressed ? 28px : 18px;
+                            border-radius: logo-ta.pressed ? self.width / 2 : Ds.r-m;
                             background: Theme.primary-container;
                             animate border-radius { duration: 200ms; easing: ease-out-back; }
                             Logo { size: 34px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; ink: Theme.on-primary-container; }
@@ -164,10 +164,10 @@ export component AppWindow inherits Window {
                 if Nav.page == 4: LogsPage { }
                 if Nav.page == 5: SettingsPage { }
                 if Ui.update-available && !Ui.update-ready && Nav.page != 5: Rectangle {
-                    x: parent.width - self.width - 20px; y: parent.height - self.height - 20px;
-                    width: ul.preferred-width; height: 56px; border-radius: 16px; background: Theme.tertiary-container;
+                    x: parent.width - self.width - Ds.page; y: parent.height - self.height - Ds.page;
+                    width: ul.preferred-width; height: 56px; border-radius: Ds.r-m; background: Theme.tertiary-container;
                     ul := HorizontalLayout {
-                        padding-left: 16px; padding-right: 8px; spacing: 10px;
+                        padding-left: Ds.s4; padding-right: Ds.s2; spacing: Ds.s3;
                         Icon { glyph: "\u{e923}"; color: Theme.on-tertiary-container; width: 22px; }
                         Text { text: @tr("Version {} is available", Ui.update-version); color: Theme.on-tertiary-container; font-size: 14px; vertical-alignment: center; }
                         VerticalLayout { alignment: center; Button { kind: 0; text: @tr("Details"); clicked => { Nav.dialog = "update"; } } }
@@ -258,7 +258,7 @@ export component AppWindow inherits Window {
         ListView {
             height: 360px;
             for p in Ui.processes: Rectangle {
-                height: 40px; border-radius: 10px;
+                height: 40px; border-radius: Ds.r-s;
                 background: pa.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
                 Text { x: 14px; text: p; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; }
                 pa := TouchArea { mouse-cursor: pointer; clicked => { Logic.split-add(p); } }
@@ -291,7 +291,7 @@ export component AppWindow inherits Window {
         dismiss => { Logic.dismiss("error"); }
         Text { text: Ui.error-hint; font-size: 14px; color: Theme.on-surface; wrap: word-wrap; }
         Rectangle {
-            height: 160px; border-radius: 12px; background: Theme.surface-container-highest;
+            height: 160px; border-radius: Ds.r-s; background: Theme.surface-container-highest;
             ScrollView { Text { x: 12px; y: 10px; width: parent.width - 24px; text: Ui.error-details; font-family: "Consolas"; font-size: 12px; color: Theme.on-surface-variant; wrap: char-wrap; } }
         }
         Actions {
@@ -334,7 +334,7 @@ export component AppWindow inherits Window {
     if Ui.show-qr: Dialog {
         title: Ui.qr-title; glyph: "\u{ef6b}"; card-width: 420px;
         dismiss => { Logic.dismiss("qr"); }
-        HorizontalLayout { alignment: center; Rectangle { width: 300px; height: 300px; border-radius: 16px; background: white; clip: true; Image { source: Ui.qr-image; width: 280px; height: 280px; image-rendering: pixelated; } } }
+        HorizontalLayout { alignment: center; Rectangle { width: 300px; height: 300px; border-radius: Ds.r-m; background: white; clip: true; Image { source: Ui.qr-image; width: 280px; height: 280px; image-rendering: pixelated; } } }
         Actions { Button { text: @tr("Close"); clicked => { Logic.dismiss("qr"); } } }
     }
 
@@ -345,7 +345,7 @@ export component AppWindow inherits Window {
         ScrollView {
             height: min(440px, root.height - 260px);
             VerticalLayout {
-                spacing: 8px; padding-right: 12px;
+                spacing: Ds.s2; padding-right: Ds.s3;
                 for f[i] in fields: Field { label: f.label; text: f.value; edited(t) => { fields[i].value = t; } }
             }
         }
@@ -368,7 +368,7 @@ export component MiniWindow inherits Window {
     default-font-family: "Rubik";
     TouchArea { pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { Logic.drag(); } } }
     HorizontalLayout {
-        padding: 12px; spacing: 10px;
+        padding: Ds.s3; spacing: Ds.s3;
         VerticalLayout { alignment: center; ConnectButton { size: 76px; } }
         VerticalLayout {
             alignment: center; spacing: 4px; horizontal-stretch: 1;

@@ -1,5 +1,5 @@
 import { ListView, ScrollView } from "std-widgets.slint";
-import { Theme, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Label, Row, Shape, Avatar, Field, Progress, Spark } from "theme.slint";
+import { Theme, Ds, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Label, Row, Shape, Avatar, Field, Progress, Spark } from "theme.slint";
 import { Ui, Logic, NodeItem, SubItem, RuleItem } from "data.slint";
 import { Shapes } from "shapes.slint";
 
@@ -22,8 +22,8 @@ export component PingChip inherits Rectangle {
     callback clicked;
     property <color> c: ping == -100 ? Theme.on-surface-variant : (ping < 0 ? Theme.error : (ping < 200 ? Theme.good : (ping < 500 ? Theme.warn : Theme.error)));
     height: 28px;
-    width: max(64px, t.preferred-width + 20px);
-    border-radius: 14px;
+    width: max(64px, t.preferred-width + 24px);
+    border-radius: self.height / 2;
     background: ta.has-hover ? c.with-alpha(0.22) : c.with-alpha(0.12);
     t := Text {
         text: root.testing ? "···" : (root.ping == -100 ? "— ms" : (root.ping == -1 ? @tr("timeout") : (root.ping == -3 ? "TUN?" : root.ping + " ms")));
@@ -37,19 +37,19 @@ component NodeRow inherits Rectangle {
     in property <NodeItem> n;
     height: n.header ? 44px : 68px;
     if root.n.header: HorizontalLayout {
-        padding-left: 8px; padding-top: 12px; spacing: 8px; alignment: start;
+        padding-left: Ds.s4; padding-top: Ds.s3; spacing: Ds.s2; alignment: start;
         Text { text: root.n.name; font-size: 13px; font-weight: 700; color: Theme.primary; vertical-alignment: center; overflow: elide; }
         Text { text: root.n.count; font-size: 12px; color: Theme.on-surface-variant; vertical-alignment: center; }
     }
     if !root.n.header: Rectangle {
-        y: 2px; height: parent.height - 4px;
-        border-radius: root.n.selected ? 20px : 16px;
+        y: Ds.list-gap / 2; height: parent.height - Ds.list-gap;
+        border-radius: root.n.selected ? Ds.r-l : Ds.r-m;
         background: root.n.selected ? Theme.secondary-container : (ta.has-hover ? Theme.surface-container-high : Theme.surface-container);
         opacity: root.n.hidden ? 0.55 : 1;
         animate background, border-radius { duration: 180ms; }
         ta := TouchArea { mouse-cursor: pointer; clicked => { Logic.select-node(root.n.id); } }
         HorizontalLayout {
-            padding-left: 12px; padding-right: 8px; spacing: 14px;
+            padding-left: Ds.s3; padding-right: Ds.s2; spacing: Ds.s3;
             VerticalLayout { alignment: center; Avatar { flag: root.n.flag; has-flag: root.n.has-flag; selected: root.n.selected; glyph: root.n.glyph; } }
             VerticalLayout {
                 alignment: center; spacing: 2px; horizontal-stretch: 1;
@@ -60,11 +60,11 @@ component NodeRow inherits Rectangle {
             VerticalLayout { alignment: center; IconButton { glyph: "\u{e5d4}"; clicked => { menu.show(); } } }
         }
         menu := PopupWindow {
-            x: parent.width - 220px; y: parent.height - 8px; width: 210px;
+            x: parent.width - 220px; y: parent.height - 8px; width: 212px;
             Rectangle {
-                border-radius: 12px; background: Theme.surface-container-highest; drop-shadow-blur: 12px; drop-shadow-color: #00000050;
+                border-radius: Ds.r-m; background: Theme.surface-container-highest; drop-shadow-blur: 12px; drop-shadow-color: #00000050;
                 VerticalLayout {
-                    padding-top: 6px; padding-bottom: 6px;
+                    padding: Ds.s1;
                     for it in [
                         { k: "copy", t: @tr("Copy link"), g: "\u{e157}" },
                         { k: "qr", t: @tr("QR code"), g: "\u{ef6b}" },
@@ -74,9 +74,10 @@ component NodeRow inherits Rectangle {
                         { k: "delete", t: @tr("Delete"), g: "\u{e872}" },
                     ]: Rectangle {
                         height: 40px;
+                        border-radius: Ds.r-s;
                         background: mta.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
                         HorizontalLayout {
-                            padding-left: 14px; spacing: 12px;
+                            padding-left: Ds.s3; spacing: Ds.s3;
                             Icon { glyph: it.g; font-size: 18px; color: Theme.on-surface-variant; width: 20px; }
                             Text { text: it.t; font-size: 14px; color: it.k == "delete" ? Theme.error : Theme.on-surface; vertical-alignment: center; }
                         }
@@ -90,23 +91,23 @@ component NodeRow inherits Rectangle {
 
 export component ServersPage inherits Rectangle {
     VerticalLayout {
-        padding: 24px; padding-bottom: 8px; spacing: 14px;
+        padding: Ds.page; padding-right: Ds.s3; padding-bottom: 0; spacing: Ds.s4;
         HorizontalLayout {
-            spacing: 12px;
+            spacing: Ds.s3; padding-right: Ds.s3;
             Title { text: @tr("Servers"); }
             Text { text: Ui.node-count; font-size: 14px; color: Theme.on-surface-variant; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
             Rectangle {
-                width: 260px; height: 40px; border-radius: 20px; background: Theme.surface-container-high;
+                width: 260px; height: 40px; border-radius: self.height / 2; background: Theme.surface-container-high;
                 HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 8px;
+                    padding-left: Ds.s4; padding-right: Ds.s4; spacing: Ds.s2;
                     Icon { glyph: "\u{e8b6}"; font-size: 18px; color: Theme.on-surface-variant; width: 20px; }
                     search := TextInput {
                         vertical-alignment: center; font-size: 14px; color: Theme.on-surface; single-line: true;
                         edited => { Logic.search(self.text); }
                     }
                 }
-                if search.text == "": Text { x: 44px; text: @tr("Search"); font-size: 14px; color: Theme.on-surface-variant.with-alpha(0.7); }
+                if search.text == "": Text { x: 44px; vertical-alignment: center; height: parent.height; text: @tr("Search"); font-size: 14px; color: Theme.on-surface-variant.with-alpha(0.7); }
             }
             Button { kind: 1; glyph: "\u{e9e4}"; text: Ui.pinging ? @tr("Testing…") : @tr("Test all"); enabled: !Ui.pinging; clicked => { Logic.ping-all(); } }
             Button { glyph: "\u{e145}"; text: @tr("Add"); clicked => { Nav.dialog = "import"; } }
@@ -117,7 +118,7 @@ export component ServersPage inherits Rectangle {
             Chip { text: @tr("Name"); selected: Ui.settings.server-sort == 1; clicked => { Logic.set-sort(1); } }
             Chip { text: @tr("Ping"); selected: Ui.settings.server-sort == 2; clicked => { Logic.set-sort(2); } }
             Chip { text: @tr("Recent"); selected: Ui.settings.server-sort == 3; clicked => { Logic.set-sort(3); } }
-            Rectangle { width: 12px; }
+            Rectangle { width: Ds.s4; }
             Chip { text: @tr("Hidden"); glyph: "\u{e8f4}"; selected: Ui.settings.show-hidden; clicked => { Logic.set-bool("show-hidden", !Ui.settings.show-hidden); } }
         }
         if Ui.nodes.length == 0: VerticalLayout {
@@ -132,7 +133,8 @@ export component ServersPage inherits Rectangle {
         }
         if Ui.nodes.length > 0: ListView {
             vertical-stretch: 1;
-            for n in Ui.nodes: NodeRow { n: n; }
+            // keep clear of the overlay scrollbar
+            for n in Ui.nodes: HorizontalLayout { padding-right: Ds.s3; NodeRow { n: n; } }
         }
     }
 }
@@ -143,14 +145,14 @@ component SubCard inherits Card {
     in property <SubItem> s;
     min-height: lay.preferred-height;
     lay := VerticalLayout {
-        padding: 18px; spacing: 10px;
+        padding: Ds.card; spacing: Ds.s3;
         HorizontalLayout {
-            spacing: 14px;
+            spacing: Ds.s3;
             Rectangle {
                 width: 48px; height: 48px;
                 if !root.s.has-logo: Shape { width: 100%; height: 100%; shape: Shapes.clover4; fill: Theme.primary-container; }
                 if !root.s.has-logo: Icon { glyph: "\u{eb5a}"; color: Theme.on-primary-container; }
-                if root.s.has-logo: Rectangle { border-radius: 14px; clip: true; background: Theme.surface-container-highest; Image { source: root.s.logo; width: 100%; height: 100%; image-fit: contain; } }
+                if root.s.has-logo: Rectangle { border-radius: Ds.r-s; clip: true; background: Theme.surface-container-highest; Image { source: root.s.logo; width: 100%; height: 100%; image-fit: contain; } }
             }
             VerticalLayout {
                 alignment: center; spacing: 2px; horizontal-stretch: 1;
@@ -162,10 +164,12 @@ component SubCard inherits Card {
                 Text { text: root.s.info; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; }
             }
             if root.s.updating: VerticalLayout { alignment: center; Progress { width: 48px; } }
+            VerticalLayout { alignment: center; HorizontalLayout { spacing: Ds.s1;
             IconButton { glyph: "\u{e5d5}"; enabled: !root.s.updating; clicked => { Logic.update-sub(root.s.id); } }
-            IconButton { glyph: root.s.pinned ? "\u{f10d}" : "\u{f10e}"; clicked => { Logic.pin-sub(root.s.id); } }
+            IconButton { glyph: "\u{f10d}"; tint: root.s.pinned ? Theme.primary : Theme.on-surface-variant; clicked => { Logic.pin-sub(root.s.id); } }
             IconButton { glyph: "\u{e3c9}"; clicked => { Nav.a = root.s.id; Nav.b = root.s.name; Nav.c = root.s.url; Nav.n = root.s.auto-hours; Nav.d = root.s.user-agent; Nav.dialog = "edit-sub"; } }
             IconButton { glyph: "\u{e872}"; clicked => { Logic.delete-sub(root.s.id); } }
+            } }
         }
         if root.s.quota != "" || root.s.expire != "": VerticalLayout {
             spacing: 6px;
@@ -178,12 +182,12 @@ component SubCard inherits Card {
         if root.s.history.length > 2: Spark { height: 36px; values: root.s.history; }
         if root.s.expired || root.s.used-up: HorizontalLayout {
             spacing: 8px; alignment: start;
-            if root.s.expired: Rectangle { height: 26px; width: et.preferred-width + 20px; border-radius: 8px; background: Theme.error-container; et := Text { text: @tr("Subscription expired"); font-size: 12px; color: Theme.on-error-container; } }
-            if root.s.used-up: Rectangle { height: 26px; width: ut.preferred-width + 20px; border-radius: 8px; background: Theme.error-container; ut := Text { text: @tr("Out of traffic"); font-size: 12px; color: Theme.on-error-container; } }
+            if root.s.expired: Rectangle { height: 28px; width: et.preferred-width + 24px; border-radius: Ds.r-xs; background: Theme.error-container; et := Text { text: @tr("Subscription expired"); font-size: 12px; color: Theme.on-error-container; } }
+            if root.s.used-up: Rectangle { height: 28px; width: ut.preferred-width + 24px; border-radius: Ds.r-xs; background: Theme.error-container; ut := Text { text: @tr("Out of traffic"); font-size: 12px; color: Theme.on-error-container; } }
         }
         if root.s.announce != "": Rectangle {
-            border-radius: 14px; background: Theme.tertiary-container; min-height: at.preferred-height + 20px;
-            at := Text { x: 14px; width: parent.width - 28px; text: root.s.announce; wrap: word-wrap; font-size: 13px; color: Theme.on-tertiary-container; }
+            border-radius: Ds.r-m; background: Theme.tertiary-container; min-height: at.preferred-height + 2 * Ds.s3;
+            at := Text { x: Ds.s4; width: parent.width - 2 * Ds.s4; text: root.s.announce; wrap: word-wrap; font-size: 13px; color: Theme.on-tertiary-container; }
         }
         if root.s.error != "": Text { text: root.s.error; font-size: 12px; color: Theme.error; wrap: word-wrap; }
         if root.s.support != "" || root.s.website != "": HorizontalLayout {
@@ -196,9 +200,9 @@ component SubCard inherits Card {
 
 export component SubsPage inherits Rectangle {
     VerticalLayout {
-        padding: 24px; padding-bottom: 8px; spacing: 14px;
+        padding: Ds.page; padding-right: Ds.s3; padding-bottom: 0; spacing: Ds.s4;
         HorizontalLayout {
-            spacing: 12px;
+            spacing: Ds.s3; padding-right: Ds.s3;
             Title { text: @tr("Subscriptions"); }
             Rectangle { horizontal-stretch: 1; }
             Button { kind: 1; glyph: "\u{e5d5}"; text: @tr("Update all"); clicked => { Logic.update-all-subs(); } }
@@ -212,7 +216,7 @@ export component SubsPage inherits Rectangle {
         }
         if Ui.subs.length > 0: ListView {
             vertical-stretch: 1;
-            for s in Ui.subs: VerticalLayout { padding-bottom: 12px; SubCard { s: s; } }
+            for s in Ui.subs: VerticalLayout { padding-bottom: Ds.card-gap; padding-right: Ds.s3; SubCard { s: s; } }
         }
     }
 }
@@ -224,21 +228,21 @@ component RuleRow inherits Rectangle {
     in property <int> index;
     in property <int> total;
     height: 56px;
-    border-radius: 14px;
+    border-radius: Ds.r-m;
     background: ta.has-hover ? Theme.surface-container-high : Theme.surface-container;
     opacity: r.enabled ? 1 : 0.5;
     ta := TouchArea { mouse-cursor: pointer; clicked => { Nav.a = root.r.id; Nav.b = root.r.kind; Nav.c = root.r.value; Nav.d = root.r.action; Nav.dialog = "rule"; } }
     HorizontalLayout {
-        padding-left: 14px; padding-right: 8px; spacing: 12px;
-        Rectangle {
-            width: 82px; height: 26px; y: (parent.height - self.height) / 2; border-radius: 13px;
+        padding-left: Ds.s3; padding-right: Ds.s2; padding-top: Ds.s2; padding-bottom: Ds.s2; spacing: Ds.s3;
+        VerticalLayout { alignment: center; Rectangle {
+            width: 84px; height: 28px; border-radius: self.height / 2;
             background: root.r.action == "BLOCK" ? Theme.error-container : (root.r.action == "DIRECT" ? Theme.tertiary-container : Theme.primary-container);
             Text {
                 text: root.r.action == "BLOCK" ? @tr("Block") : (root.r.action == "DIRECT" ? @tr("Direct") : @tr("Proxy"));
                 font-size: 12px; font-weight: 600;
                 color: root.r.action == "BLOCK" ? Theme.on-error-container : (root.r.action == "DIRECT" ? Theme.on-tertiary-container : Theme.on-primary-container);
             }
-        }
+        } }
         Text { text: root.r.kind; font-size: 11px; color: Theme.on-surface-variant; vertical-alignment: center; width: 70px; }
         Text { text: root.r.value; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
         IconButton { glyph: "\u{e5ce}"; enabled: root.index > 0; clicked => { Logic.move-rule(root.r.id, -1); } }
@@ -251,7 +255,7 @@ component RuleRow inherits Rectangle {
 export component RoutingPage inherits Rectangle {
     ScrollView {
         VerticalLayout {
-            padding: 24px; spacing: 16px;
+            padding: Ds.page; padding-right: Ds.s3; spacing: Ds.s4; // the scroll bar takes the other 12 px
             Title { text: @tr("Routing"); }
             Segmented {
                 options: [@tr("By rules"), @tr("Global"), @tr("Direct")];
@@ -262,7 +266,7 @@ export component RoutingPage inherits Rectangle {
             Card {
                 min-height: presets.preferred-height;
                 presets := VerticalLayout {
-                    padding-top: 8px; padding-bottom: 8px;
+                    padding-top: Ds.s2; padding-bottom: Ds.s2;
                     Row { title: @tr("Local network directly"); subtitle: @tr("Router, printers and LAN addresses skip the proxy"); Switch { checked: Ui.routing.bypass-lan; toggled(v) => { Logic.set-routing-bool("bypass-lan", v); } } }
                     Row { title: @tr("Russian sites directly"); subtitle: @tr(".ru domains and Russian IPs skip the proxy"); Switch { checked: Ui.routing.bypass-ru; toggled(v) => { Logic.set-routing-bool("bypass-ru", v); } } }
                     Row { title: @tr("Block ads"); subtitle: @tr("Ad and tracker domains are dropped"); Switch { checked: Ui.routing.block-ads; toggled(v) => { Logic.set-routing-bool("block-ads", v); } } }
@@ -274,39 +278,39 @@ export component RoutingPage inherits Rectangle {
                 }
             }
             HorizontalLayout {
-                spacing: 12px;
-                Text { text: @tr("Rules"); font-size: 18px; font-weight: 600; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                padding-top: Ds.s2; spacing: Ds.s2;
+                Text { text: @tr("Rules"); font-size: 14px; font-weight: 700; color: Theme.primary; vertical-alignment: center; horizontal-stretch: 1; }
                 Button { kind: 2; text: @tr("RU preset"); clicked => { Logic.apply-preset("ru"); } }
                 Button { glyph: "\u{e145}"; text: @tr("Add rule"); clicked => { Nav.a = ""; Nav.b = "DOMAIN"; Nav.c = ""; Nav.d = "PROXY"; Nav.dialog = "rule"; } }
             }
             if Ui.rules.length == 0: Text { text: @tr("No rules yet. Presets above already cover the common cases."); font-size: 13px; color: Theme.on-surface-variant; wrap: word-wrap; }
-            for r[i] in Ui.rules: RuleRow { r: r; index: i; total: Ui.rules.length; }
+            if Ui.rules.length > 0: VerticalLayout { spacing: Ds.list-gap; for r[i] in Ui.rules: RuleRow { r: r; index: i; total: Ui.rules.length; } }
 
             // split tunnelling
             HorizontalLayout {
-                padding-top: 12px; spacing: 12px;
-                Text { text: @tr("Split tunnelling"); font-size: 18px; font-weight: 600; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                padding-top: Ds.s2; spacing: Ds.s3;
+                Text { text: @tr("Split tunnelling"); font-size: 14px; font-weight: 700; color: Theme.primary; vertical-alignment: center; horizontal-stretch: 1; }
                 Switch { checked: Ui.routing.split-enabled; toggled(v) => { Logic.set-routing-bool("split-enabled", v); } }
             }
             Text { text: @tr("Choose which programs use the VPN. Works in both modes."); font-size: 13px; color: Theme.on-surface-variant; wrap: word-wrap; }
             if Ui.routing.split-enabled: VerticalLayout {
-                spacing: 12px;
+                spacing: Ds.s3;
                 Segmented { options: [@tr("Listed apps go directly"), @tr("Only listed apps use the VPN")]; index: Ui.routing.split-mode; picked(i) => { Logic.set-int("split-mode", i); } }
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Ds.s2;
                     app-field := Field { label: @tr("Program"); placeholder: "telegram.exe"; horizontal-stretch: 1; accepted(t) => { Logic.split-add(t); self.text = ""; } }
                     VerticalLayout { alignment: center; Button { glyph: "\u{e145}"; text: @tr("Add"); clicked => { Logic.split-add(app-field.text); app-field.text = ""; } } }
                     VerticalLayout { alignment: center; Button { kind: 2; glyph: "\u{e8b6}"; text: @tr("Running apps"); clicked => { Logic.refresh-processes(); Nav.dialog = "processes"; } } }
                 }
-                for app in Ui.split-apps: Rectangle {
-                    height: 48px; border-radius: 12px; background: Theme.surface-container;
+                if Ui.split-apps.length > 0: VerticalLayout { spacing: Ds.list-gap; for app in Ui.split-apps: Rectangle {
+                    height: 56px; border-radius: Ds.r-m; background: Theme.surface-container;
                     HorizontalLayout {
-                        padding-left: 16px; padding-right: 6px;
-                        Icon { glyph: "\u{e5c3}"; font-size: 18px; width: 28px; color: Theme.on-surface-variant; }
+                        padding-left: Ds.s4; padding-right: Ds.s2; padding-top: Ds.s2; padding-bottom: Ds.s2; spacing: Ds.s3;
+                        Icon { glyph: "\u{e5c3}"; font-size: 20px; width: 24px; color: Theme.on-surface-variant; }
                         Text { text: app; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
                         IconButton { glyph: "\u{e5cd}"; clicked => { Logic.split-remove(app); } }
                     }
-                }
+                } }
             }
         }
     }
@@ -317,24 +321,26 @@ export component RoutingPage inherits Rectangle {
 export component LogsPage inherits Rectangle {
     in-out property <int> filter: 0;
     VerticalLayout {
-        padding: 24px; padding-bottom: 8px; spacing: 14px;
+        padding: Ds.page; spacing: Ds.s4;
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Ds.s2;
             Title { text: @tr("Logs"); }
             Rectangle { horizontal-stretch: 1; }
-            Chip { text: @tr("All"); selected: root.filter == 0; clicked => { root.filter = 0; Logic.set-log-filter(0); } }
-            Chip { text: @tr("Warnings"); selected: root.filter == 1; clicked => { root.filter = 1; Logic.set-log-filter(1); } }
-            Chip { text: @tr("Errors"); selected: root.filter == 2; clicked => { root.filter = 2; Logic.set-log-filter(2); } }
-            Rectangle { width: 8px; }
+            VerticalLayout { alignment: center; HorizontalLayout { spacing: Ds.s2;
+                Chip { text: @tr("All"); selected: root.filter == 0; clicked => { root.filter = 0; Logic.set-log-filter(0); } }
+                Chip { text: @tr("Warnings"); selected: root.filter == 1; clicked => { root.filter = 1; Logic.set-log-filter(1); } }
+                Chip { text: @tr("Errors"); selected: root.filter == 2; clicked => { root.filter = 2; Logic.set-log-filter(2); } }
+            } }
+            Rectangle { width: Ds.s4; }
             Button { kind: 1; glyph: "\u{e14d}"; text: @tr("Copy"); clicked => { Logic.copy-logs(); } }
-            Button { kind: 3; glyph: "\u{e872}"; text: @tr("Clear"); clicked => { Logic.clear-logs(); } }
+            Button { kind: 2; glyph: "\u{e872}"; text: @tr("Clear"); clicked => { Logic.clear-logs(); } }
         }
         Rectangle {
-            border-radius: 20px; background: Theme.surface-container-low; vertical-stretch: 1;
+            border-radius: Ds.r-l; background: Theme.surface-container-low; vertical-stretch: 1; clip: true;
             if Ui.logs.length == 0: Text { text: @tr("Nothing here yet"); color: Theme.on-surface-variant; font-size: 13px; }
             ListView {
                 for l in Ui.logs: HorizontalLayout {
-                    padding-left: 16px; padding-right: 16px; padding-top: 3px; padding-bottom: 3px; spacing: 10px;
+                    padding-left: Ds.s4; padding-right: Ds.s5; padding-top: Ds.s1; padding-bottom: Ds.s1; spacing: Ds.s3;
                     Text { text: l.time; font-family: "Consolas"; font-size: 12px; color: Theme.on-surface-variant; width: 64px; }
                     Text { text: l.level; font-family: "Consolas"; font-size: 12px; width: 14px; color: l.level == "E" ? Theme.error : (l.level == "W" ? Theme.warn : Theme.primary); }
                     Text { text: l.text; font-family: "Consolas"; font-size: 12px; color: Theme.on-surface; wrap: char-wrap; horizontal-stretch: 1; }
@@ -348,20 +354,20 @@ export component LogsPage inherits Rectangle {
 
 component Section inherits VerticalLayout {
     in property <string> title;
-    spacing: 8px;
+    spacing: Ds.s2;
     Text { text: root.title; font-size: 14px; font-weight: 700; color: Theme.primary; }
-    Card { min-height: inner.preferred-height; inner := VerticalLayout { padding-top: 6px; padding-bottom: 6px; @children } }
+    Card { min-height: inner.preferred-height; inner := VerticalLayout { padding-top: Ds.s2; padding-bottom: Ds.s2; @children } }
 }
 
 component SmallField inherits Rectangle {
     in property <string> value;
     in property <length> w: 120px;
     callback commit(string);
-    width: w; height: 36px; border-radius: 10px;
+    width: w; height: 40px; border-radius: Ds.r-s;
     background: Theme.surface-container-highest;
     border-width: inp.has-focus ? 2px : 0; border-color: Theme.primary;
     inp := TextInput {
-        x: 12px; width: parent.width - 24px; vertical-alignment: center;
+        x: Ds.s3; width: parent.width - 2 * Ds.s3; vertical-alignment: center;
         text: root.value; font-size: 13px; color: Theme.on-surface; single-line: true;
         accepted => { root.commit(self.text); }
         changed has-focus => { if !self.has-focus && self.text != root.value { root.commit(self.text); } }
@@ -372,7 +378,7 @@ export component SettingsPage inherits Rectangle {
     property <[color]> seeds: [#1f8bff, #6750a4, #b3261e, #e8590c, #f4b400, #2e7d32, #00897b, #0097a7, #c2185b, #5d4037];
     ScrollView {
         VerticalLayout {
-            padding: 24px; spacing: 20px;
+            padding: Ds.page; padding-right: Ds.s3; spacing: Ds.s5;
             Title { text: @tr("Settings"); }
 
             Section {
@@ -382,9 +388,9 @@ export component SettingsPage inherits Rectangle {
                 if Ui.settings.color-source == 1: Row {
                     title: @tr("Colour");
                     HorizontalLayout {
-                        spacing: 8px;
+                        spacing: Ds.s2;
                         for c in root.seeds: Rectangle {
-                            width: 28px; height: 28px; border-radius: 14px; background: c;
+                            width: 28px; height: 28px; border-radius: self.width / 2; background: c;
                             border-width: Ui.settings.seed == c ? 3px : 0; border-color: Theme.on-surface;
                             TouchArea { mouse-cursor: pointer; clicked => { Logic.set-seed(c); } }
                         }
@@ -438,8 +444,8 @@ export component SettingsPage inherits Rectangle {
                 Row { title: @tr("Start with Windows"); Switch { checked: Ui.settings.autostart; toggled(v) => { Logic.set-bool("autostart", v); } } }
                 Row { title: @tr("Connect on start"); Switch { checked: Ui.settings.auto-connect; toggled(v) => { Logic.set-bool("auto-connect", v); } } }
                 Row { title: @tr("Close to tray"); subtitle: @tr("The close button keeps Uplinx running in the tray"); Switch { checked: Ui.settings.minimize-to-tray; toggled(v) => { Logic.set-bool("minimize-to-tray", v); } } }
-                Row { title: @tr("Check for updates"); subtitle: "Uplinx " + Ui.app-version; HorizontalLayout { spacing: 12px;
-                    Switch { y: 4px; checked: Ui.settings.check-updates; toggled(v) => { Logic.set-bool("check-updates", v); } }
+                Row { title: @tr("Check for updates"); subtitle: "Uplinx " + Ui.app-version; HorizontalLayout { spacing: Ds.s3;
+                    VerticalLayout { alignment: center; Switch { checked: Ui.settings.check-updates; toggled(v) => { Logic.set-bool("check-updates", v); } } }
                     Button { kind: 1; text: @tr("Check now"); clicked => { Logic.check-updates(); } } } }
                 Row { title: @tr("Data folder"); Button { kind: 2; glyph: "\u{e2c7}"; text: @tr("Open"); clicked => { Logic.open-data-folder(); } } }
             }

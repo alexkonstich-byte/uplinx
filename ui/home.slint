@@ -1,5 +1,5 @@
 // Home: a dashboard of widgets on a 12-column grid. In edit mode widgets can be dragged, resized, added and removed.
-import { Theme, Icon, IconButton, Button, Chip, Segmented, Card, Label, Shape, Avatar, Progress, Spark } from "theme.slint";
+import { Theme, Ds, Icon, IconButton, Button, Chip, Segmented, Card, Label, Shape, Avatar, Progress, Spark } from "theme.slint";
 import { Ui, Logic, WidgetItem, NodeItem } from "data.slint";
 import { Shapes } from "shapes.slint";
 import { Nav, PingChip } from "pages.slint";
@@ -40,8 +40,8 @@ export component ConnectButton inherits Rectangle {
 component Head inherits HorizontalLayout {
     in property <string> glyph;
     in property <string> title;
-    spacing: 8px;
-    height: 24px;
+    spacing: Ds.s2;
+    height: 32px;
     Icon { glyph: root.glyph; font-size: 18px; color: Theme.primary; width: 20px; }
     Text { text: root.title; font-size: 13px; font-weight: 600; color: Theme.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
     @children
@@ -55,14 +55,15 @@ component Big inherits Text {
 }
 
 component ConnectW inherits Rectangle {
-    property <length> s: min(self.width * 0.62, (self.height - 90px) * 0.8);
+    // the button (with its halo, x1.3) plus two lines of text must fit inside the card padding
+    property <length> s: min((self.width - 2 * Ds.s5) / 1.3, (self.height - 2 * Ds.s5 - 72px) / 1.3);
     VerticalLayout {
-        padding: 16px; spacing: 4px; alignment: center;
-        HorizontalLayout { alignment: center; ConnectButton { size: max(80px, root.s); } }
+        padding: Ds.s5; spacing: Ds.s1; alignment: center;
+        HorizontalLayout { alignment: center; ConnectButton { size: max(64px, root.s); } }
         Big { text: Ui.status-text; font-size: root.width > 380px ? 26px : 20px; horizontal-alignment: center; }
         Text { text: Ui.server-name; font-size: 14px; color: Theme.on-surface-variant; horizontal-alignment: center; overflow: elide; }
         if Ui.preparing: VerticalLayout {
-            spacing: 6px; padding-top: 6px;
+            spacing: Ds.s2; padding-top: Ds.s2;
             Text { text: Ui.prep-text; font-size: 12px; color: Theme.on-surface-variant; horizontal-alignment: center; }
             HorizontalLayout { alignment: center; Progress { width: 180px; value: Ui.prep-progress; } }
         }
@@ -71,10 +72,10 @@ component ConnectW inherits Rectangle {
 
 component ServerW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 10px;
+        padding: Ds.card; spacing: Ds.s2;
         Head { glyph: "\u{e875}"; title: @tr("Server"); }
         HorizontalLayout {
-            spacing: 14px; vertical-stretch: 1;
+            spacing: Ds.s4; vertical-stretch: 1;
             VerticalLayout { alignment: center; Avatar { flag: Ui.server-flag; has-flag: Ui.server-has-flag; selected: Ui.status == 2; } }
             VerticalLayout {
                 alignment: center; spacing: 2px; horizontal-stretch: 1;
@@ -88,7 +89,7 @@ component ServerW inherits Rectangle {
 
 component ModesW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 10px; alignment: center;
+        padding: Ds.card; spacing: Ds.s2; alignment: center;
         Segmented { options: [@tr("System proxy"), "TUN"]; index: Ui.settings.connect-mode; picked(i) => { Logic.set-connect-mode(i); } }
         Segmented { options: [@tr("By rules"), @tr("Global"), @tr("Direct")]; index: Ui.routing.mode; picked(i) => { Logic.set-routing-mode(i); } }
     }
@@ -96,10 +97,10 @@ component ModesW inherits Rectangle {
 
 component SpeedW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 6px;
+        padding: Ds.card; spacing: Ds.s2;
         Head { glyph: "\u{e9e4}"; title: @tr("Speed"); }
         HorizontalLayout {
-            spacing: 18px;
+            spacing: Ds.s4;
             HorizontalLayout { spacing: 4px; Icon { glyph: "\u{f090}"; font-size: 18px; color: Theme.primary; width: 18px; } Big { text: Ui.down-speed; font-size: 20px; } }
             HorizontalLayout { spacing: 4px; Icon { glyph: "\u{f09b}"; font-size: 18px; color: Theme.tertiary; width: 18px; } Big { text: Ui.up-speed; font-size: 20px; } }
         }
@@ -113,8 +114,8 @@ component SpeedW inherits Rectangle {
 
 component PingW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 6px;
-        Head { glyph: "\u{e1d8}"; title: @tr("Ping"); IconButton { width: 28px; height: 28px; glyph: "\u{e5d5}"; clicked => { Logic.ping-current(); } } }
+        padding: Ds.card; spacing: Ds.s2;
+        Head { glyph: "\u{e1d8}"; title: @tr("Ping"); IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; clicked => { Logic.ping-current(); } } }
         Big { text: Ui.ping-now; font-size: 22px; }
         if Ui.ping-stats != "": Text { text: Ui.ping-stats; font-size: 11px; color: Theme.on-surface-variant; overflow: elide; }
         Spark { vertical-stretch: 1; values: Ui.ping-values; tint: Theme.secondary; }
@@ -123,8 +124,8 @@ component PingW inherits Rectangle {
 
 component IpW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 4px;
-        Head { glyph: "\u{e80b}"; title: @tr("Your IP"); IconButton { width: 28px; height: 28px; glyph: "\u{e5d5}"; enabled: !Ui.ip-loading; clicked => { Logic.refresh-ip(); } } }
+        padding: Ds.card; spacing: Ds.s2;
+        Head { glyph: "\u{e80b}"; title: @tr("Your IP"); IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; enabled: !Ui.ip-loading; clicked => { Logic.refresh-ip(); } } }
         Big { text: Ui.ip-loading ? "…" : (Ui.ip == "" ? "—" : Ui.ip); font-size: 18px; }
         HorizontalLayout {
             spacing: 6px;
@@ -137,7 +138,7 @@ component IpW inherits Rectangle {
 
 component QuotaW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 8px;
+        padding: Ds.card; spacing: Ds.s2;
         Head { glyph: "\u{e1db}"; title: Ui.has-quota ? Ui.quota-title : @tr("Subscription"); }
         if !Ui.has-quota: Text { text: @tr("No subscription data"); font-size: 13px; color: Theme.on-surface-variant; }
         if Ui.has-quota: Big { text: Ui.quota-text; font-size: 17px; }
@@ -148,18 +149,18 @@ component QuotaW inherits Rectangle {
 
 component ServersW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 6px;
-        Head { glyph: "\u{e8ee}"; title: @tr("Servers"); IconButton { width: 28px; height: 28px; glyph: "\u{e9e4}"; enabled: !Ui.pinging; clicked => { Logic.ping-all(); } } }
+        padding: Ds.card; spacing: Ds.s2;
+        Head { glyph: "\u{e8ee}"; title: @tr("Servers"); IconButton { width: 32px; height: 32px; glyph: "\u{e9e4}"; enabled: !Ui.pinging; clicked => { Logic.ping-all(); } } }
         Flickable {
             vertical-stretch: 1;
             content-height: list.preferred-height;
             list := VerticalLayout {
                 for n in Ui.top-nodes: Rectangle {
-                    height: 44px; border-radius: 12px;
+                    height: 48px; border-radius: Ds.r-s;
                     background: n.selected ? Theme.secondary-container : (ta.has-hover ? Theme.surface-container-highest : transparent);
                     ta := TouchArea { mouse-cursor: pointer; clicked => { Logic.select-node(n.id); } }
                     HorizontalLayout {
-                        padding-left: 6px; padding-right: 6px; spacing: 10px;
+                        padding-left: Ds.s2; padding-right: Ds.s2; spacing: Ds.s3;
                         VerticalLayout { alignment: center; Avatar { size: 32px; flag: n.flag; has-flag: n.has-flag; selected: n.selected; glyph: n.glyph; } }
                         Text { text: n.name; font-size: 13px; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
                         VerticalLayout { alignment: center; PingChip { ping: n.ping; testing: n.testing; clicked => { Logic.ping-node(n.id); } } }
@@ -172,11 +173,11 @@ component ServersW inherits Rectangle {
 
 component SessionW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 6px;
+        padding: Ds.card; spacing: Ds.s2;
         Head { glyph: "\u{e8b5}"; title: @tr("Session"); }
         Big { text: Ui.session-time; font-size: 22px; }
         HorizontalLayout {
-            spacing: 14px;
+            spacing: Ds.s4;
             Text { text: "↓ " + Ui.down-total; font-size: 13px; color: Theme.on-surface-variant; }
             Text { text: "↑ " + Ui.up-total; font-size: 13px; color: Theme.on-surface-variant; }
         }
@@ -185,11 +186,11 @@ component SessionW inherits Rectangle {
 
 component SitesW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 6px;
+        padding: Ds.card; spacing: Ds.s2;
         Head {
             glyph: "\u{e8be}"; title: @tr("Sites");
-            IconButton { width: 28px; height: 28px; glyph: "\u{e3c9}"; clicked => { Nav.c = Ui.sites-text; Nav.dialog = "sites"; } }
-            IconButton { width: 28px; height: 28px; glyph: "\u{e5d5}"; enabled: !Ui.sites-checking; clicked => { Logic.check-sites(); } }
+            IconButton { width: 32px; height: 32px; glyph: "\u{e3c9}"; clicked => { Nav.c = Ui.sites-text; Nav.dialog = "sites"; } }
+            IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; enabled: !Ui.sites-checking; clicked => { Logic.check-sites(); } }
         }
         Flickable {
             vertical-stretch: 1;
@@ -211,10 +212,10 @@ component SitesW inherits Rectangle {
 
 component SpeedTestW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 8px;
+        padding: Ds.card; spacing: Ds.s2;
         Head { glyph: "\u{e9e4}"; title: @tr("Speed test"); }
         HorizontalLayout {
-            spacing: 18px;
+            spacing: Ds.s4;
             VerticalLayout { Text { text: @tr("Download"); font-size: 11px; color: Theme.on-surface-variant; } Big { text: Ui.speed-down; font-size: 18px; } }
             VerticalLayout { Text { text: @tr("Upload"); font-size: 11px; color: Theme.on-surface-variant; } Big { text: Ui.speed-up; font-size: 18px; } }
             VerticalLayout { Text { text: @tr("Ping"); font-size: 11px; color: Theme.on-surface-variant; } Big { text: Ui.speed-ping; font-size: 18px; } }
@@ -232,7 +233,7 @@ component SpeedTestW inherits Rectangle {
 
 component UsageW inherits Rectangle {
     VerticalLayout {
-        padding: 16px; spacing: 8px;
+        padding: Ds.card; spacing: Ds.s2;
         Head { glyph: "\u{e26b}"; title: @tr("Usage"); Text { text: Ui.usage-total; font-size: 12px; color: Theme.on-surface-variant; vertical-alignment: center; } }
         bars := Rectangle {
             vertical-stretch: 1;
@@ -266,7 +267,7 @@ component Tile inherits Rectangle {
     height: max(row-h, w.h * row-h + (w.h - 1) * gap + dh);
     z: moving ? 10 : 0;
     card := Rectangle {
-        border-radius: 24px;
+        border-radius: Ds.r-l;
         background: Theme.surface-container;
         border-width: Nav.edit-layout ? 2px : 0;
         border-color: root.moving ? Theme.primary : Theme.outline-variant;
@@ -287,7 +288,7 @@ component Tile inherits Rectangle {
         if root.w.kind == "USAGE": UsageW { }
     }
     if Nav.edit-layout: Rectangle {
-        border-radius: 24px;
+        border-radius: Ds.r-l;
         background: Theme.surface.with-alpha(0.35);
         TouchArea {
             mouse-cursor: move;
@@ -302,12 +303,12 @@ component Tile inherits Rectangle {
             }
         }
         Rectangle {
-            x: 8px; y: 8px; width: 32px; height: 32px; border-radius: 16px; background: Theme.error-container;
+            x: Ds.s3; y: Ds.s3; width: 32px; height: 32px; border-radius: self.width / 2; background: Theme.error-container;
             Icon { glyph: "\u{e5cd}"; font-size: 18px; color: Theme.on-error-container; }
             TouchArea { mouse-cursor: pointer; clicked => { Logic.widget-remove(root.w.id); } }
         }
         Rectangle {
-            x: parent.width - 34px; y: parent.height - 34px; width: 28px; height: 28px; border-radius: 14px; background: Theme.primary;
+            x: parent.width - self.width - Ds.s3; y: parent.height - self.height - Ds.s3; width: 32px; height: 32px; border-radius: self.width / 2; background: Theme.primary;
             Icon { glyph: "\u{e5d0}"; font-size: 16px; color: Theme.on-primary; transform-rotation: 45deg; }
             TouchArea {
                 mouse-cursor: nwse-resize;
@@ -326,8 +327,8 @@ component Tile inherits Rectangle {
 }
 
 export component HomePage inherits Rectangle {
-    property <length> gap: 12px;
-    property <length> pad: 24px;
+    property <length> gap: Ds.card-gap;
+    property <length> pad: Ds.page;
     property <length> cell: (self.width - 2 * pad - 11 * gap) / 12;
     property <length> row-h: 64px;
     property <[{k: string, t: string, g: string}]> kinds: [
@@ -345,12 +346,12 @@ export component HomePage inherits Rectangle {
 
     VerticalLayout {
         HorizontalLayout {
-            padding-left: root.pad; padding-right: root.pad; padding-top: 16px; spacing: 8px; height: 56px;
+            padding-left: root.pad; padding-right: root.pad; padding-top: Ds.page; padding-bottom: Ds.s4; spacing: Ds.s2; height: 80px;
             Text { text: Nav.edit-layout ? @tr("Drag widgets, pull the corner to resize") : ""; font-size: 13px; color: Theme.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
             if !Nav.edit-layout: Button { kind: 1; glyph: "\u{e145}"; text: @tr("Add servers"); clicked => { Nav.dialog = "import"; } }
             if Nav.edit-layout: Button { kind: 3; text: @tr("Reset"); clicked => { Logic.widgets-reset(); } }
             if Nav.edit-layout: Button { kind: 1; glyph: "\u{e145}"; text: @tr("Widget"); clicked => { add-menu.show(); } }
-            Button { kind: Nav.edit-layout ? 0 : 3; glyph: Nav.edit-layout ? "\u{e5ca}" : "\u{e3c9}"; text: Nav.edit-layout ? @tr("Done") : @tr("Edit"); clicked => { Nav.edit-layout = !Nav.edit-layout; } }
+            Button { kind: Nav.edit-layout ? 0 : 2; glyph: Nav.edit-layout ? "\u{e5ca}" : "\u{e3c9}"; text: Nav.edit-layout ? @tr("Done") : @tr("Edit"); clicked => { Nav.edit-layout = !Nav.edit-layout; } }
         }
         Flickable {
             vertical-stretch: 1;
@@ -364,13 +365,13 @@ export component HomePage inherits Rectangle {
         }
     }
     add-menu := PopupWindow {
-        x: root.width - 260px; y: 56px; width: 220px;
+        x: root.width - 260px; y: 72px; width: 220px;
         Rectangle {
-            border-radius: 16px; background: Theme.surface-container-highest; drop-shadow-blur: 16px; drop-shadow-color: #00000050;
+            border-radius: Ds.r-m; background: Theme.surface-container-highest; drop-shadow-blur: 16px; drop-shadow-color: #00000050;
             VerticalLayout {
-                padding: 6px;
+                padding: Ds.s1;
                 for k in root.kinds: Rectangle {
-                    height: 40px; border-radius: 10px;
+                    height: 40px; border-radius: Ds.r-s;
                     background: ka.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
                     HorizontalLayout { padding-left: 12px; spacing: 12px;
                         Icon { glyph: k.g; font-size: 18px; width: 20px; color: Theme.primary; }

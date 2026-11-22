@@ -33,6 +33,26 @@ export global Theme {
     in property <bool> motion: false;
 }
 
+/** One scale for the whole app (M3 Expressive): corners and spacing. */
+export global Ds {
+    // corners
+    out property <length> r-xs: 8px;    // chips, tags
+    out property <length> r-s: 12px;    // inputs, menu items, snackbar, small surfaces inside cards
+    out property <length> r-m: 16px;    // list items, popups, banners, logo container
+    out property <length> r-l: 24px;    // cards, widgets, sections
+    out property <length> r-xl: 28px;   // dialogs
+    // spacing
+    out property <length> s1: 4px;
+    out property <length> s2: 8px;
+    out property <length> s3: 12px;
+    out property <length> s4: 16px;
+    out property <length> s5: 24px;
+    out property <length> page: 24px;   // screen padding
+    out property <length> card: 16px;   // padding inside cards and widgets
+    out property <length> list-gap: 4px; // between items of one list
+    out property <length> card-gap: 12px; // between cards
+}
+
 export component Icon inherits Text {
     in property <string> glyph;
     text: glyph;
@@ -69,7 +89,7 @@ export component Button inherits Rectangle {
     property <color> fg: kind == 0 ? Theme.on-primary : (kind == 1 ? Theme.on-secondary-container : (kind == 4 ? Theme.on-error-container : Theme.primary));
     height: 40px;
     min-width: lay.preferred-width;
-    border-radius: ta.pressed ? 10px : self.height / 2;
+    border-radius: ta.pressed ? Ds.r-s : self.height / 2;
     animate border-radius { duration: 160ms; easing: ease-out; }
     background: kind == 0 ? Theme.primary : (kind == 1 ? Theme.secondary-container : (kind == 4 ? Theme.error-container : transparent));
     border-width: kind == 2 ? 1px : 0;
@@ -94,13 +114,13 @@ export component Chip inherits Rectangle {
     callback clicked;
     height: 32px;
     min-width: lay.preferred-width;
-    border-radius: 8px;
+    border-radius: Ds.r-xs;
     background: selected ? Theme.secondary-container : (ta.has-hover ? Theme.on-surface.with-alpha(0.06) : transparent);
     border-width: selected ? 0 : 1px;
     border-color: Theme.outline-variant;
     animate background { duration: 150ms; }
     lay := HorizontalLayout {
-        padding-left: 12px; padding-right: 14px; spacing: 6px;
+        padding-left: 12px; padding-right: 16px; spacing: 8px;
         if root.selected || root.glyph != "": Icon { glyph: root.selected ? "\u{e5ca}" : root.glyph; font-size: 16px; color: root.selected ? Theme.on-secondary-container : Theme.on-surface-variant; }
         Text { text: root.text; font-size: 13px; font-weight: 500; vertical-alignment: center; color: root.selected ? Theme.on-secondary-container : Theme.on-surface-variant; }
     }
@@ -118,9 +138,9 @@ export component Segmented inherits HorizontalLayout {
         horizontal-stretch: 1;
         min-width: t.preferred-width + 24px;
         property <bool> sel: i == root.index;
-        border-top-left-radius: sel || i == 0 ? 20px : 6px;
+        border-top-left-radius: sel || i == 0 ? self.height / 2 : Ds.r-xs;
         border-bottom-left-radius: self.border-top-left-radius;
-        border-top-right-radius: sel || i == root.options.length - 1 ? 20px : 6px;
+        border-top-right-radius: sel || i == root.options.length - 1 ? self.height / 2 : Ds.r-xs;
         border-bottom-right-radius: self.border-top-right-radius;
         background: sel ? Theme.primary : (ta.has-hover ? Theme.surface-container-highest : Theme.surface-container-high);
         animate background { duration: 180ms; }
@@ -155,11 +175,12 @@ export component Switch inherits Rectangle {
 
 export component Card inherits Rectangle {
     in property <bool> high;
-    border-radius: 24px;
+    border-radius: Ds.r-l;
     background: high ? Theme.surface-container-high : Theme.surface-container;
 }
 
 export component Title inherits Text {
+    min-height: 40px; // same baseline on every screen, with or without buttons beside it
     font-family: "Unbounded";
     font-weight: 600;
     font-size: 22px;
@@ -179,9 +200,9 @@ export component Label inherits Text {
 export component Row inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
-    min-height: subtitle == "" ? 52px : 64px;
+    min-height: subtitle == "" ? 56px : 72px;
     HorizontalLayout {
-        padding-left: 20px; padding-right: 16px; spacing: 16px;
+        padding-left: Ds.s4; padding-right: Ds.s4; padding-top: Ds.s2; padding-bottom: Ds.s2; spacing: Ds.s4;
         VerticalLayout {
             alignment: center; spacing: 2px; horizontal-stretch: 1;
             Text { text: root.title; font-size: 14px; color: Theme.on-surface; overflow: elide; }
@@ -223,7 +244,7 @@ export component Field inherits Rectangle {
     callback edited(string);
     callback accepted(string);
     height: 56px;
-    border-top-left-radius: 8px; border-top-right-radius: 8px;
+    border-top-left-radius: Ds.r-s; border-top-right-radius: Ds.r-s;
     background: Theme.surface-container-highest;
     Rectangle { y: parent.height - self.height; height: input.has-focus ? 2px : 1px; background: input.has-focus ? Theme.primary : Theme.on-surface-variant; }
     Text { x: 16px; y: 7px; text: root.label; font-size: 11px; color: input.has-focus ? Theme.primary : Theme.on-surface-variant; }
@@ -246,7 +267,7 @@ export component Field inherits Rectangle {
 export component Area inherits Rectangle {
     in-out property <string> text;
     in property <string> placeholder;
-    border-radius: 12px;
+    border-radius: Ds.r-s;
     background: Theme.surface-container-highest;
     clip: true;
     if root.text == "" && !input.has-focus: Text { x: 14px; y: 12px; text: root.placeholder; font-size: 13px; color: Theme.on-surface-variant.with-alpha(0.7); }
@@ -312,13 +333,13 @@ export component Dialog inherits Rectangle {
     Rectangle {
         width: min(root.card-width, root.width - 48px);
         height: min(lay.preferred-height, root.height - 48px);
-        border-radius: 28px;
+        border-radius: Ds.r-xl;
         background: Theme.surface-container-high;
         drop-shadow-blur: 24px;
         drop-shadow-color: #00000060;
         TouchArea { } // swallow clicks
         lay := VerticalLayout {
-            padding: 24px; spacing: 16px;
+            padding: Ds.s5; spacing: Ds.s4;
             if root.glyph != "": Icon { glyph: root.glyph; font-size: 26px; color: Theme.secondary; }
             Text { text: root.title; font-size: 22px; color: Theme.on-surface; wrap: word-wrap; horizontal-alignment: root.glyph != "" ? center : left; }
             @children
