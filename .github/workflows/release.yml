@@ -41,11 +41,13 @@ jobs:
 
       - name: Validate generated configs with the real cores
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $tmp = "$env:RUNNER_TEMP\cores"; New-Item -ItemType Directory -Force $tmp | Out-Null
           Invoke-WebRequest https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-64.zip -OutFile "$tmp\xray.zip"
           Expand-Archive "$tmp\xray.zip" "$tmp\xray" -Force
-          $tag = (Invoke-WebRequest https://github.com/SagerNet/sing-box/releases/latest -MaximumRedirection 0 -SkipHttpErrorCheck).Headers.Location.Split('/')[-1].TrimStart('v')
+          $tag = (gh release view --repo SagerNet/sing-box --json tagName -q .tagName).TrimStart('v')
           Invoke-WebRequest "https://github.com/SagerNet/sing-box/releases/download/v$tag/sing-box-$tag-windows-amd64.zip" -OutFile "$tmp\sb.zip"
           Expand-Archive "$tmp\sb.zip" "$tmp\sb" -Force
           $sb = (Get-ChildItem "$tmp\sb" -Recurse -Filter sing-box.exe).FullName
