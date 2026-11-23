@@ -4,8 +4,8 @@ import "fonts/Unbounded.ttf";
 import "fonts/MaterialIconsRound-Regular.otf";
 import { ListView, ScrollView } from "std-widgets.slint";
 import { Shapes } from "shapes.slint";
-import { Theme, Ds, Logo, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Shape, Avatar, Field, Area, Progress, Dialog } from "theme.slint";
-import { Ui, Logic, FieldItem } from "data.slint";
+import { Theme, Ds, Appear, Logo, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Shape, Avatar, Field, Area, Progress, Dialog } from "theme.slint";
+import { Ui, Logic, FieldItem, AppItem } from "data.slint";
 import { Nav, ServersPage, SubsPage, RoutingPage, LogsPage, SettingsPage } from "pages.slint";
 import { HomePage, ConnectButton } from "home.slint";
 
@@ -78,6 +78,11 @@ component RailItem inherits VerticalLayout {
 }
 
 component Snackbar inherits Rectangle {
+    property <float> t: 0;
+    init => { root.t = 1; }
+    animate t { duration: Theme.motion ? 280ms : 0ms; easing: cubic-bezier(0.05, 0.7, 0.1, 1.0); }
+    opacity: root.t;
+    transform-scale: 0.9 + 0.1 * root.t;
     height: 52px;
     width: min(lay.preferred-width, 640px);
     border-radius: Ds.r-s;
@@ -93,6 +98,86 @@ component Snackbar inherits Rectangle {
             TouchArea { mouse-cursor: pointer; clicked => { Logic.message-action(); } }
         }
         IconButton { glyph: "\u{e5cd}"; tooltip: @tr("Close"); tint: Theme.inverse-on-surface; clicked => { Logic.dismiss("message"); } }
+    }
+}
+
+/** First start: who made Uplinx, the licence and the terms. "I agree" unlocks after 10 seconds of reading. */
+component Disclaimer inherits Rectangle {
+    property <int> left: 10;
+    background: #000000b8;
+    TouchArea { } // nothing behind it can be clicked
+    Timer { interval: 1s; running: root.left > 0; triggered => { root.left -= 1; } }
+    Rectangle {
+        width: min(640px, root.width - 2 * Ds.page);
+        height: min(lay.preferred-height, root.height - 2 * Ds.page);
+        border-radius: Ds.r-xl;
+        background: Theme.surface-container-high;
+        drop-shadow-blur: 24px; drop-shadow-color: #00000060;
+        clip: true;
+        lay := VerticalLayout {
+            padding: Ds.s5; spacing: Ds.s4;
+            HorizontalLayout {
+                spacing: Ds.s3;
+                Rectangle {
+                    width: 48px; height: 48px; border-radius: Ds.r-m; background: Theme.primary-container;
+                    Logo { size: 30px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; ink: Theme.on-primary-container; }
+                }
+                VerticalLayout {
+                    alignment: center; horizontal-stretch: 1;
+                    Text { text: @tr("Before you start"); font-family: "Unbounded"; font-weight: 600; font-size: 20px; color: Theme.on-surface; }
+                    Text { text: "Uplinx " + Ui.app-version; font-size: 12px; color: Theme.on-surface-variant; }
+                }
+                VerticalLayout { alignment: center; Segmented {
+                    width: 220px;
+                    options: ["English", "Русский"];
+                    index: Ui.settings.language == 2 ? 1 : 0;
+                    picked(i) => { Logic.set-int("language", i == 1 ? 2 : 1); }
+                } }
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                min-height: min(320px, root.height - 330px);
+                VerticalLayout {
+                    spacing: Ds.s3; padding-right: Ds.s3;
+                    for p in [
+                        { g: "\u{e7fd}", t: @tr("Uplinx is free, open-source software by alexkonstich-byte, released under the MIT License.") },
+                        { g: "\u{e875}", t: @tr("Uplinx is only a client. It does not provide VPN servers, sell subscriptions or collect your data: servers come from the subscriptions and links you add yourself.") },
+                        { g: "\u{e90d}", t: @tr("Use it in line with the laws of your country and the terms of your provider. You alone are responsible for how you use it.") },
+                        { g: "\u{e002}", t: @tr("The software is provided “as is”, without warranty of any kind. The authors are not liable for any damage or loss arising from its use.") },
+                        { g: "\u{e86f}", t: @tr("Xray-core (MPL-2.0), Twemoji flags (CC-BY 4.0) and other open-source parts are used under their own licences.") },
+                    ]: HorizontalLayout {
+                        spacing: Ds.s3;
+                        Icon { glyph: p.g; font-size: 20px; width: 24px; color: Theme.primary; vertical-alignment: top; }
+                        Text { text: p.t; font-size: 14px; color: Theme.on-surface; wrap: word-wrap; horizontal-stretch: 1; }
+                    }
+                }
+            }
+            Rectangle {
+                height: 1px; background: Theme.outline-variant;
+            }
+            HorizontalLayout {
+                spacing: Ds.s4;
+                VerticalLayout { spacing: 2px; alignment: center;
+                    Text { text: @tr("Author"); font-size: 11px; color: Theme.on-surface-variant; }
+                    Text { text: "alexkonstich-byte"; font-size: 13px; color: Theme.on-surface; }
+                }
+                VerticalLayout { spacing: 2px; alignment: center;
+                    Text { text: @tr("Licence"); font-size: 11px; color: Theme.on-surface-variant; }
+                    Text { text: "MIT"; font-size: 13px; color: Theme.on-surface; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                VerticalLayout { alignment: center; Button { kind: 2; glyph: "\u{e86f}"; text: "GitHub"; clicked => { Logic.open-url("https://github.com/alexkonstich-byte/uplinx"); } } }
+            }
+            HorizontalLayout {
+                alignment: end; spacing: Ds.s2;
+                Button { kind: 3; text: @tr("Quit"); clicked => { Logic.quit(); } }
+                Button {
+                    text: root.left > 0 ? @tr("I agree ({})", root.left) : @tr("I agree");
+                    enabled: root.left == 0;
+                    clicked => { Logic.accept-disclaimer(); }
+                }
+            }
+        }
     }
 }
 
@@ -167,12 +252,13 @@ export component AppWindow inherits Window {
             }
             Rectangle {
                 horizontal-stretch: 1;
-                if Nav.page == 0: HomePage { }
-                if Nav.page == 1: ServersPage { }
-                if Nav.page == 2: SubsPage { }
-                if Nav.page == 3: RoutingPage { }
-                if Nav.page == 4: LogsPage { }
-                if Nav.page == 5: SettingsPage { }
+                // every screen slides in softly when you switch to it
+                if Nav.page == 0: Appear { HomePage { } }
+                if Nav.page == 1: Appear { ServersPage { } }
+                if Nav.page == 2: Appear { SubsPage { } }
+                if Nav.page == 3: Appear { RoutingPage { } }
+                if Nav.page == 4: Appear { LogsPage { } }
+                if Nav.page == 5: Appear { SettingsPage { } }
                 if Ui.update-available && !Ui.update-ready && Nav.page != 5: Rectangle {
                     x: parent.width - self.width - Ds.page; y: parent.height - self.height - Ds.page;
                     width: ul.preferred-width; height: 56px; border-radius: Ds.r-m; background: Theme.tertiary-container;
@@ -279,15 +365,26 @@ export component AppWindow inherits Window {
     }
 
     if Nav.dialog == "processes": Dialog {
-        title: @tr("Running apps"); glyph: "\u{e5c3}";
+        title: @tr("Running apps"); glyph: "\u{e5c3}"; card-width: 600px;
         dismiss => { Nav.dialog = ""; }
+        Text { text: Nav.b == "split" ? @tr("Click a program to add it to split tunnelling.") : @tr("Choose where each program's traffic goes."); font-size: 13px; color: Theme.on-surface-variant; wrap: word-wrap; }
         ListView {
-            height: 360px;
+            height: 380px;
             for p in Ui.processes: Rectangle {
-                height: 40px; border-radius: Ds.r-s;
-                background: pa.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
-                Text { x: 14px; text: p; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; }
-                pa := TouchArea { mouse-cursor: pointer; clicked => { Logic.split-add(p); } }
+                height: 52px; border-radius: Ds.r-s;
+                background: pa.has-hover ? Theme.on-surface.with-alpha(0.06) : transparent;
+                pa := TouchArea { mouse-cursor: Nav.b == "split" ? pointer : default; clicked => { if Nav.b == "split" { Logic.split-add(p.name); } } }
+                HorizontalLayout {
+                    padding-left: Ds.s3; padding-right: Ds.s3; spacing: Ds.s3;
+                    if p.has-icon: Image { source: p.icon; width: 28px; height: 28px; y: (parent.height - self.height) / 2; }
+                    if !p.has-icon: Icon { glyph: "\u{e5c3}"; font-size: 22px; width: 28px; color: Theme.on-surface-variant; }
+                    Text { text: p.name; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                    if Nav.b != "split": VerticalLayout { alignment: center; HorizontalLayout { spacing: Ds.s1;
+                        Chip { text: "VPN"; clicked => { Logic.rule-from-app(p.name, "PROXY"); } }
+                        Chip { text: @tr("Direct"); clicked => { Logic.rule-from-app(p.name, "DIRECT"); } }
+                        Chip { text: @tr("Block"); clicked => { Logic.rule-from-app(p.name, "BLOCK"); } }
+                    } }
+                }
             }
         }
         Actions { Button { text: @tr("Done"); clicked => { Nav.dialog = ""; } } }
@@ -396,6 +493,8 @@ export component AppWindow inherits Window {
             }
         }
     }
+    // the first-start notice sits above everything, including dialogs
+    if Ui.show-disclaimer: Disclaimer { }
     } // keys
 }
 

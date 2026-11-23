@@ -1,7 +1,7 @@
 //! The controller: owns the state, runs connect/disconnect, pings, subscriptions, updates.
 //! Plain threads + mutexes; the UI polls a revision counter and redraws only when it moved.
 
-use crate::core::{self, awg, errors::{self, Friendly}, ping, probe, subs, sysproxy, update, Core, Status};
+use crate::core::{self, awg, singbox, Engine, errors::{self, Friendly}, ping, probe, subs, sysproxy, update, Core, Status};
 use crate::model::*;
 use crate::{parse, state, t, win};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -46,11 +46,15 @@ pub struct App {
     pub pending_import: Mutex<Option<(String, String)>>,
     pub flags: Flags,
     core_ver: Mutex<String>,
+    singbox_ver: Mutex<String>,
     /// The user wants to be connected (cleared only by Disconnect): drives automatic reconnects.
     want_connected: AtomicBool,
     reconnects: std::sync::atomic::AtomicU32,
     /// Physical adapter at the time a TUN connection was made; a change means a new network.
     tun_iface: Mutex<Option<String>>,
+    /// "Measure speed of all": (done, total, current server) while it runs.
+    pub speed_all: Mutex<Option<(usize, usize, String)>>,
+    speed_all_cancel: Mutex<Option<Arc<AtomicBool>>>,
     pub rev: AtomicU64,
     dirty: AtomicBool,
     running_sig: Mutex<Option<String>>,
@@ -72,10 +76,11 @@ impl App {
             messages: Default::default(), toasts: Default::default(), last_error: Default::default(), ip: Default::default(),
             ip_loading: AtomicBool::new(false), ping_history: Default::default(), sites: Default::default(), sites_checking: AtomicBool::new(false),
             speed: Default::default(), speed_node: Default::default(), update: Default::default(), update_progress: Default::default(),
-            update_ready: Default::default(), whats_new: Default::default(), pending_import: Default::default(), flags: Flags::default(), core_ver: Default::default(),
+            update_ready: Default::default(), whats_new: Default::default(), pending_import: Default::default(), flags: Flags::default(), core_ver: Default::default(), singbox_ver: Default::default(),
             rev: AtomicU64::new(1), dirty: AtomicBool::new(false), running_sig: Default::default(), connect_lock: Mutex::new(()),
             ping_cancel: Mutex::new(Arc::new(AtomicBool::new(false))), awg_stats: Default::default(),
             want_connected: AtomicBool::new(false), reconnects: Default::default(), tun_iface: Default::default(),
+            speed_all: Default::default(), speed_all_cancel: Default::default(),
         });
         app.clone().start_background();
         app
@@ -119,7 +124,19 @@ impl App {
     fn read_core_version(&self) {
         let v = self.core.version().map(|v| format!("v{v}")).unwrap_or_else(|| t!("Not installed"));
         *self.core_ver.lock().unwrap() = v;
+        let sb = self.core.singbox_version().map(|v| format!("v{v}")).unwrap_or_else(|| t!("Not installed"));
+        *self.singbox_ver.lock().unwrap() = sb;
         self.bump();
+    }
+    pub fn singbox_version(&self) -> String { self.singbox_ver.lock().unwrap().clone() }
+
+    /// Which engine runs this server and its config. sing-box only when chosen and able to run the server.
+    fn plan(node: &ProxyNode, st: &AppState) -> (Engine, String) {
+        if st.settings.core == "SINGBOX" && singbox::supports(node) {
+            (Engine::SingBox, singbox::build(node, &st.settings, &st.routing))
+        } else {
+            (Engine::Xray, core::xray::build(node, &st.settings, &st.routing))
+        }
     }
 
     fn start_background(self: Arc<Self>) {
@@ -300,9 +317,25 @@ impl App {
             self.bump();
             if !self.core.has_core() { self.core.install(false, st.settings.geo_source == "RUNETFREEDOM")?; self.read_core_version(); }
             else { self.core.install(false, st.settings.geo_source == "RUNETFREEDOM")?; }
-            if tun { awg::ensure_wintun()?; }
-            let cfg = core::xray::build(&node, &st.settings, &st.routing);
-            self.core.start(&cfg, st.settings.api_port)?;
+            let (mut engine, mut cfg) = Self::plan(&node, &st);
+            if st.settings.core == "SINGBOX" && engine == Engine::Xray {
+                self.core.log('W', t!("sing-box can't run this server (%1) — using Xray", node.transport_label()));
+            }
+            if engine == Engine::SingBox {
+                if let Err(e) = self.core.install_singbox(false) {
+                    self.core.log('W', t!("sing-box couldn't be installed (%1) — using Xray", e));
+                    (engine, cfg) = (Engine::Xray, core::xray::build(&node, &st.settings, &st.routing));
+                }
+            }
+            if tun && engine == Engine::Xray { awg::ensure_wintun()?; }
+            if let Err(e) = self.core.start_with(engine, &cfg, st.settings.api_port) {
+                if engine != Engine::SingBox { return Err(e); }
+                // a config sing-box rejects must not leave the user offline: Xray takes over
+                self.core.log('W', t!("sing-box didn't start (%1) — using Xray", e.to_string().lines().next().unwrap_or("")));
+                if tun { awg::ensure_wintun()?; }
+                cfg = core::xray::build(&node, &st.settings, &st.routing);
+                self.core.start_with(Engine::Xray, &cfg, st.settings.api_port)?;
+            }
             if !tun { sysproxy::enable(st.settings.http_port, st.settings.socks_port)?; }
             Ok(cfg)
         })();
@@ -403,7 +436,9 @@ impl App {
         let st = self.snapshot();
         let Some(node) = st.selected_node() else { return };
         if node.needs_amnezia_engine() { return; }
-        if Some(core::xray::build(node, &st.settings, &st.routing)) != *self.running_sig.lock().unwrap() {
+        let (engine, cfg) = Self::plan(node, &st);
+        let running = *self.core.engine.lock().unwrap();
+        if engine != running || Some(cfg) != *self.running_sig.lock().unwrap() {
             self.notify(t!("Settings changed"), Some((t!("Reconnect"), Action::Reconnect)));
         }
     }
@@ -657,6 +692,45 @@ impl App {
         });
     }
 
+    /// Measures the real download speed of every visible server, one after another (a few seconds each).
+    pub fn speed_all(self: &Arc<Self>) {
+        if self.speed_all.lock().unwrap().is_some() { return; }
+        let st = self.snapshot();
+        let pings = self.pings.lock().unwrap().clone();
+        let mut nodes: Vec<ProxyNode> = st.nodes.iter()
+            .filter(|n| !st.hidden.contains(&n.identity()) && !n.needs_amnezia_engine() && pings.get(&n.id).is_none_or(|&p| p >= 0))
+            .cloned().collect();
+        nodes.sort_by_key(|n| pings.get(&n.id).copied().unwrap_or(i32::MAX));
+        if nodes.is_empty() { self.notify(t!("Add a server or a subscription first"), None); return; }
+        let cancel = Arc::new(AtomicBool::new(false));
+        *self.speed_all_cancel.lock().unwrap() = Some(cancel.clone());
+        *self.speed_all.lock().unwrap() = Some((0, nodes.len(), String::new()));
+        self.bump();
+        let me = self.clone();
+        spawn(move || {
+            if !me.core.has_core() { let _ = me.core.install(false, st.settings.geo_source == "RUNETFREEDOM"); }
+            let mut measured = 0;
+            for (i, n) in nodes.iter().enumerate() {
+                if cancel.load(Relaxed) { break; }
+                *me.speed_all.lock().unwrap() = Some((i, nodes.len(), crate::view::split_flag(&n.name).1));
+                me.bump();
+                if let Some(v) = probe::quick_speed(n, &st.settings, 4.0, &cancel) {
+                    measured += 1;
+                    let key = n.identity();
+                    me.edit(|s| { s.settings.speeds.insert(key, v); });
+                }
+            }
+            *me.speed_all.lock().unwrap() = None;
+            *me.speed_all_cancel.lock().unwrap() = None;
+            me.notify(t!("Speed measured: %1 of %2 servers", measured, nodes.len()), None);
+            me.bump();
+        });
+    }
+
+    pub fn speed_all_stop(&self) {
+        if let Some(c) = self.speed_all_cancel.lock().unwrap().as_ref() { c.store(true, Relaxed); }
+    }
+
     pub fn toggle_favorite(&self, id: &str) {
         let Some(n) = self.snapshot().nodes.into_iter().find(|n| n.id == id) else { return };
         let key = n.identity();
@@ -773,6 +847,8 @@ impl App {
             match r {
                 Ok(res) => {
                     if res.ping_ms >= 0 { me.pings.lock().unwrap().insert(n.id.clone(), res.ping_ms); }
+                    let (key, down) = (n.identity(), res.down_mbps);
+                    me.edit(|s| { s.settings.speeds.insert(key, down); });
                     me.edit(|s| { s.settings.speed_results.push(res); let k = s.settings.speed_results.len(); if k > 30 { s.settings.speed_results.drain(..k - 30); } });
                 }
                 Err(e) => { *me.speed.lock().unwrap() = None; me.notify(t!("Speed test failed: %1", errors::explain(&e.to_string()).title), None); }
@@ -886,6 +962,14 @@ impl App {
     }
 
     // ============================================================ core & app updates
+
+    pub fn update_singbox(self: &Arc<Self>) {
+        let me = self.clone();
+        spawn(move || match me.core.install_singbox(true) {
+            Ok(()) => { me.read_core_version(); me.notify(t!("sing-box updated: %1", me.singbox_version()), None) }
+            Err(e) => me.notify(t!("Update failed: %1", errors::explain(&e.to_string()).title), None),
+        });
+    }
 
     pub fn update_core(self: &Arc<Self>) {
         if self.is_connected() { self.notify(t!("Disconnect first"), None); return; }

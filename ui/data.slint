@@ -15,6 +15,7 @@ export struct NodeItem {
     count: int,         // headers: servers in the group
     favorite: bool,
     collapsed: bool,    // headers: the group is folded
+    speed: string,      // measured download speed, "54 Mbps"
 }
 
 export struct SubItem {
@@ -40,7 +41,8 @@ export struct SubItem {
     history: [float],   // usage chart, 0..1
 }
 
-export struct RuleItem { id: string, kind: string, value: string, action: string, enabled: bool }
+export struct RuleItem { id: string, kind: string, value: string, action: string, enabled: bool, icon: image, has-icon: bool }
+export struct AppItem { name: string, icon: image, has-icon: bool }
 export struct LogItem { time: string, level: string, text: string }
 export struct SiteItem { site: string, ms: int, code: int, checked: bool }
 export struct WidgetItem { id: string, kind: string, x: int, y: int, w: int, h: int }
@@ -85,6 +87,7 @@ export struct Settings {
     auto-ping: bool,
     auto-reconnect: bool,
     kill-switch: bool,
+    engine: int,            // 0 Xray, 1 sing-box
 }
 
 export struct Routing {
@@ -96,6 +99,11 @@ export struct Routing {
     domain-strategy: int,   // AsIs, IPIfNonMatch, IPOnDemand
     split-enabled: bool,
     split-mode: int,        // 0 exclude (listed apps go direct), 1 include (only listed apps use the proxy)
+    preset-streaming: bool,
+    preset-ai: bool,
+    preset-social: bool,
+    preset-games: bool,
+    preset-torrents: bool,
 }
 
 export global Ui {
@@ -169,11 +177,19 @@ export global Ui {
     in property <[LogItem]> logs;
     in property <[WidgetItem]> widgets;
     in property <int> grid-rows: 8;
-    in property <[string]> split-apps;
-    in property <[string]> processes;
+    in property <[AppItem]> split-apps;
+    in property <[AppItem]> processes;
+    in property <bool> speed-all-running;
+    in property <string> speed-all-text;
+    in property <string> gauge-value;
+    in property <string> gauge-caption;
+    in property <string> gauge-max;
+    in property <string> gauge-track;
+    in property <string> gauge-fill;
     in property <Settings> settings;
     in property <Routing> routing;
     in property <string> core-version;
+    in property <string> singbox-version;
     in property <string> app-version;
     in property <bool> is-admin;
 
@@ -205,6 +221,7 @@ export global Ui {
     in property <[FieldItem]> editor-fields;
     in property <string> editor-title;
     in property <bool> show-editor;
+    in property <bool> show-disclaimer;
 }
 
 export global Logic {
@@ -230,6 +247,9 @@ export global Logic {
     callback set-sort(int);
     callback toggle-group(string);
     callback connect-fastest();
+    callback speed-all();
+    callback speed-all-stop();
+    callback rule-from-app(string, string);   // exe name, action
     callback clip-accept();
     callback clip-dismiss();
     callback route-check(string);
@@ -266,6 +286,7 @@ export global Logic {
     callback set-text(string, string);
     callback set-seed(color);
     callback update-core();
+    callback update-singbox();
     callback update-geo();
     callback check-updates();
     callback install-update();
@@ -292,4 +313,6 @@ export global Logic {
     callback message-action();
     callback dismiss(string);                // which dialog
     callback editor-save([FieldItem]);
+    callback accept-disclaimer();
+    callback quit();
 }

@@ -265,6 +265,10 @@ pub fn routing(s: &AppSettings, r: &RoutingSettings) -> Value {
                 };
                 rules.push(rule(tag_for(&ur.action), body));
             }
+            for (on, out, cats) in PRESETS(r) {
+                if on { rules.push(rule(out, json!({ "domain": cats.iter().map(|c| format!("geosite:{c}")).collect::<Vec<_>>() }))); }
+            }
+            if r.preset_block_torrents { rules.push(rule("block", json!({ "protocol": ["bittorrent"] }))); }
             if r.bypass_lan { rules.push(rule("direct", json!({ "ip": ["geoip:private"] }))); }
             if r.proxy_blocked_ru && s.geo_source == "RUNETFREEDOM" {
                 rules.push(rule("proxy", json!({ "domain": ["geosite:ru-blocked"] })));
@@ -277,5 +281,35 @@ pub fn routing(s: &AppSettings, r: &RoutingSettings) -> Value {
             rules.push(rule("proxy", json!({ "network": "tcp,udp" })));
         }
     }
+    let mut rules = rules;
+    drop_missing_geo(&mut rules);
     json!({ "domainStrategy": r.domain_strategy, "rules": rules })
+}
+
+/// Ready-made rule sets: (enabled, outbound, geosite categories).
+#[allow(non_snake_case)]
+pub fn PRESETS(r: &RoutingSettings) -> [(bool, &'static str, &'static [&'static str]); 4] {
+    [
+        (r.preset_streaming, "proxy", &["netflix", "youtube", "spotify", "twitch", "disney", "hbo", "primevideo"]),
+        (r.preset_ai, "proxy", &["openai", "anthropic", "google-gemini", "category-ai-chat-!cn"]),
+        (r.preset_social, "proxy", &["telegram", "discord", "instagram", "facebook", "twitter", "tiktok", "whatsapp"]),
+        (r.preset_games_direct, "direct", &["category-games", "steam", "epicgames"]),
+    ]
+}
+
+/// A geosite/geoip category missing from the installed databases would stop Xray from starting:
+/// such entries are dropped (and logged by the caller's core log), rules left empty go away.
+fn drop_missing_geo(rules: &mut Vec<Value>) {
+    for r in rules.iter_mut() {
+        for (key, kind) in [("domain", "geosite"), ("ip", "geoip")] {
+            if let Some(list) = r[key].as_array_mut() {
+                list.retain(|v| match v.as_str().and_then(|x| x.strip_prefix(&format!("{kind}:"))) {
+                    Some(cat) => super::route::has_category(kind, cat.split('@').next().unwrap_or(cat)),
+                    None => true,
+                });
+                if list.is_empty() { r["__empty"] = json!(true); }
+            }
+        }
+    }
+    rules.retain(|r| r.get("__empty").is_none());
 }

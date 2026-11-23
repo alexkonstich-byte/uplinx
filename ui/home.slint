@@ -233,6 +233,35 @@ component SpeedTestW inherits Rectangle {
     }
 }
 
+/** Speedometer: the running test, the live download, or the last result. Click to run a speed test. */
+component GaugeW inherits Rectangle {
+    TouchArea { mouse-cursor: pointer; clicked => { if !Ui.speed-running { Logic.run-speed-test(); } } }
+    VerticalLayout {
+        padding: Ds.card; spacing: Ds.s1;
+        Head { glyph: "\u{e9e4}"; title: @tr("Speedometer"); }
+        Rectangle {
+            vertical-stretch: 1;
+            property <length> d: min(self.width, self.height);
+            dial := Rectangle {
+                width: parent.d; height: parent.d;
+                x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                Path { width: 100%; height: 100%; viewbox-x: 0; viewbox-y: 0; viewbox-width: 100; viewbox-height: 100; commands: Ui.gauge-track; fill: Theme.surface-container-highest; }
+                if Ui.gauge-fill != "": Path { width: 100%; height: 100%; viewbox-x: 0; viewbox-y: 0; viewbox-width: 100; viewbox-height: 100; commands: Ui.gauge-fill;
+                    fill: @linear-gradient(90deg, Theme.tertiary 0%, Theme.primary 100%); }
+                VerticalLayout {
+                    x: 0; y: 0; width: parent.width; height: parent.height;
+                    alignment: center; spacing: 0;
+                    Text { text: Ui.gauge-value; font-family: "Unbounded"; font-weight: 600; font-size: max(16px, dial.height * 0.17); color: Theme.on-surface; horizontal-alignment: center; }
+                    Text { text: "Mbps"; font-size: max(10px, dial.height * 0.06); color: Theme.on-surface-variant; horizontal-alignment: center; }
+                }
+                Text { x: parent.width * 0.2; y: parent.height * 0.84; text: "0"; font-size: 11px; color: Theme.on-surface-variant; }
+                Text { x: parent.width * 0.8 - self.width; y: parent.height * 0.84; text: Ui.gauge-max; font-size: 11px; color: Theme.on-surface-variant; }
+            }
+        }
+        Text { text: Ui.speed-running ? Ui.speed-now : Ui.gauge-caption; font-size: 12px; color: Theme.on-surface-variant; horizontal-alignment: center; overflow: elide; }
+    }
+}
+
 component UsageW inherits Rectangle {
     VerticalLayout {
         padding: Ds.card; spacing: Ds.s2;
@@ -268,6 +297,11 @@ component Tile inherits Rectangle {
     width: max(cell, w.w * cell + (w.w - 1) * gap + dw);
     height: max(row-h, w.h * row-h + (w.h - 1) * gap + dh);
     z: moving ? 10 : 0;
+    property <float> shown: 0;
+    init => { root.shown = 1; }
+    animate shown { duration: Theme.motion ? 360ms + (root.w.y * 2 + root.w.x) * 12ms : 0ms; easing: cubic-bezier(0.05, 0.7, 0.1, 1.0); }
+    opacity: root.shown;
+    transform-scale: 0.94 + 0.06 * root.shown;
     card := Rectangle {
         border-radius: Ds.r-l;
         background: Theme.surface-container;
@@ -288,6 +322,7 @@ component Tile inherits Rectangle {
         if root.w.kind == "SITES": SitesW { }
         if root.w.kind == "SPEEDTEST": SpeedTestW { }
         if root.w.kind == "USAGE": UsageW { }
+        if root.w.kind == "SPEEDOMETER": GaugeW { }
     }
     if Nav.edit-layout: Rectangle {
         border-radius: Ds.r-l;
@@ -340,6 +375,7 @@ export component HomePage inherits Rectangle {
         { k: "QUOTA", t: @tr("Subscription"), g: "\u{e1db}" }, { k: "SERVERS", t: @tr("Servers"), g: "\u{e8ee}" },
         { k: "SESSION", t: @tr("Session"), g: "\u{e8b5}" }, { k: "SITES", t: @tr("Sites"), g: "\u{e8be}" },
         { k: "SPEEDTEST", t: @tr("Speed test"), g: "\u{e9e4}" }, { k: "USAGE", t: @tr("Usage"), g: "\u{e26b}" },
+        { k: "SPEEDOMETER", t: @tr("Speedometer"), g: "\u{e9e4}" },
     ];
     // decorative shapes; they only move while connecting
     property <angle> drift: Theme.motion && Ui.status == 1 ? mod(animation-tick() / 30s, 1.0) * 360deg : 0deg;

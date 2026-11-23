@@ -94,6 +94,36 @@ fn geoip(category: &str) -> Option<(Vec<(Vec<u8>, u32)>, bool)> {
     None
 }
 
+/// Category names in a .dat file (cached per file and modification time).
+fn categories(file: &str) -> Option<std::collections::HashSet<String>> {
+    use std::sync::Mutex;
+    static CACHE: Mutex<Vec<(String, std::time::SystemTime, std::collections::HashSet<String>)>> = Mutex::new(Vec::new());
+    let path = core_dir().join(file);
+    let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok()?;
+    if let Some(c) = CACHE.lock().unwrap().iter().find(|c| c.0 == file && c.1 == mtime) { return Some(c.2.clone()); }
+    let data = std::fs::read(&path).ok()?;
+    let mut set = std::collections::HashSet::new();
+    let mut top = Pb::new(&data);
+    while let Some((f, _, entry, _)) = top.next() {
+        if f != 1 { continue; }
+        let mut e = Pb::new(entry);
+        if let Some((1, _, code, _)) = e.next() { set.insert(str_of(code).to_lowercase()); }
+    }
+    let mut c = CACHE.lock().unwrap();
+    c.retain(|x| x.0 != file);
+    c.push((file.to_string(), mtime, set.clone()));
+    Some(set)
+}
+
+/// True when the category exists — or when the databases are not there to check (Xray will say).
+pub fn has_category(kind: &str, cat: &str) -> bool {
+    if kind == "geoip" && cat == "private" { return true; }
+    match categories(if kind == "geosite" { "geosite.dat" } else { "geoip.dat" }) {
+        Some(set) => set.contains(&cat.to_lowercase()),
+        None => true,
+    }
+}
+
 // ------------------------------------------------------------------ matching
 
 fn ip_bytes(ip: &IpAddr) -> Vec<u8> { match ip { IpAddr::V4(a) => a.octets().to_vec(), IpAddr::V6(a) => a.octets().to_vec() } }
@@ -170,7 +200,7 @@ fn describe(rule: &Value) -> String {
 fn pass(rules: &[Value], host: Option<&str>, ip: Option<&IpAddr>, port: u16, missing: &mut Vec<String>) -> Option<(String, String)> {
     for r in rules {
         if r.get("inboundTag").is_some() { continue; }
-        if r.get("process").is_some() { continue; } // depends on the program, not the site
+        if r.get("process").is_some() || r.get("protocol").is_some() { continue; } // depends on the program / protocol, not the site
         let mut ok = true;
         if let Some(list) = r["domain"].as_array() {
             ok = match host {

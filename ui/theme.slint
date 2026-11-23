@@ -347,6 +347,17 @@ export component Spark inherits Rectangle {
     }
 }
 
+/** Fades its content in and lifts it a little when it appears (M3 "emphasized decelerate"). Instant when the window is in the background. */
+export component Appear inherits Rectangle {
+    in property <length> lift: 16px;
+    in property <duration> length: 320ms;
+    property <float> t: 0;
+    init => { root.t = 1; }
+    animate t { duration: Theme.motion ? root.length : 0ms; easing: cubic-bezier(0.05, 0.7, 0.1, 1.0); }
+    opacity: root.t;
+    Rectangle { y: (1 - root.t) * root.lift; width: root.width; height: root.height; @children }
+}
+
 export component Scrim inherits Rectangle {
     callback dismiss;
     background: #000000a0;
@@ -359,8 +370,13 @@ export component Dialog inherits Rectangle {
     in property <string> glyph;
     in property <length> card-width: 520px;
     callback dismiss;
-    Scrim { dismiss => { root.dismiss(); } }
+    property <float> t: 0;
+    init => { root.t = 1; }
+    animate t { duration: Theme.motion ? 260ms : 0ms; easing: cubic-bezier(0.05, 0.7, 0.1, 1.0); }
+    Scrim { dismiss => { root.dismiss(); } opacity: root.t; }
     Rectangle {
+        opacity: root.t;
+        transform-scale: 0.92 + 0.08 * root.t;
         width: min(root.card-width, root.width - 48px);
         height: min(lay.preferred-height, root.height - 48px);
         border-radius: Ds.r-xl;

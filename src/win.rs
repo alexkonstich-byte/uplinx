@@ -316,3 +316,75 @@ pub fn save_file(title: &str, default_name: &str) -> Option<std::path::PathBuf> 
 pub fn virtual_screen() -> (i32, i32, i32, i32) {
     unsafe { (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN), GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN)) }
 }
+
+// ------------------------------------------------------------------ programs with icons
+
+/// Running programs: (exe name, full path), Windows' own binaries left out, one entry per exe name.
+pub fn running_programs() -> Vec<(String, String)> {
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::*;
+    use windows_sys::Win32::System::Threading::*;
+    let mut out: Vec<(String, String)> = vec![];
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap == INVALID_HANDLE_VALUE { return out; }
+        let mut e: PROCESSENTRY32W = std::mem::zeroed();
+        e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut ok = Process32FirstW(snap, &mut e) != 0;
+        let windir = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into()).to_lowercase();
+        while ok {
+            let n = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(e.szExeFile.len());
+            let name = String::from_utf16_lossy(&e.szExeFile[..n]);
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, e.th32ProcessID);
+            if !h.is_null() {
+                let mut buf = vec![0u16; 1024];
+                let mut len = buf.len() as u32;
+                if QueryFullProcessImageNameW(h, 0, buf.as_mut_ptr(), &mut len) != 0 {
+                    let path = String::from_utf16_lossy(&buf[..len as usize]);
+                    if !path.to_lowercase().starts_with(&windir) && name.to_lowercase().ends_with(".exe")
+                        && !out.iter().any(|(x, _)| x.eq_ignore_ascii_case(&name)) {
+                        out.push((name.clone(), path));
+                    }
+                }
+                CloseHandle(h);
+            }
+            ok = Process32NextW(snap, &mut e) != 0;
+        }
+        CloseHandle(snap);
+    }
+    out.sort_by_key(|x| x.0.to_lowercase());
+    out
+}
+
+/// The shell icon of a file as RGBA pixels (32 x 32).
+pub fn file_icon(path: &str) -> Option<(Vec<u8>, u32)> {
+    use windows_sys::Win32::Graphics::Gdi::*;
+    unsafe {
+        let mut sfi: SHFILEINFOW = std::mem::zeroed();
+        let p = w(path);
+        if SHGetFileInfoW(p.as_ptr(), 0, &mut sfi, std::mem::size_of::<SHFILEINFOW>() as u32, SHGFI_ICON | SHGFI_LARGEICON) == 0 || sfi.hIcon.is_null() { return None; }
+        let mut ii: ICONINFO = std::mem::zeroed();
+        let got = GetIconInfo(sfi.hIcon, &mut ii) != 0;
+        let mut result = None;
+        if got && !ii.hbmColor.is_null() {
+            let size = 32i32;
+            let dc = CreateCompatibleDC(std::ptr::null_mut());
+            let mut bi: BITMAPINFO = std::mem::zeroed();
+            bi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+            bi.bmiHeader.biWidth = size;
+            bi.bmiHeader.biHeight = -size;
+            bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 32;
+            let mut px = vec![0u8; (size * size * 4) as usize];
+            if GetDIBits(dc, ii.hbmColor, 0, size as u32, px.as_mut_ptr().cast(), &mut bi, DIB_RGB_COLORS) != 0 {
+                let has_alpha = px.chunks(4).any(|c| c[3] != 0);
+                for c in px.chunks_mut(4) { c.swap(0, 2); if !has_alpha { c[3] = 255; } } // BGRA → RGBA
+                result = Some((px, size as u32));
+            }
+            DeleteDC(dc);
+        }
+        if !ii.hbmColor.is_null() { DeleteObject(ii.hbmColor); }
+        if !ii.hbmMask.is_null() { DeleteObject(ii.hbmMask); }
+        DestroyIcon(sfi.hIcon);
+        result
+    }
+}

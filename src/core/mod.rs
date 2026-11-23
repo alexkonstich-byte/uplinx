@@ -5,6 +5,7 @@ pub mod errors;
 pub mod ping;
 pub mod probe;
 pub mod route;
+pub mod singbox;
 pub mod subs;
 pub mod sysproxy;
 pub mod update;
@@ -26,6 +27,14 @@ pub enum Status { Stopped, Preparing(String, Option<f32>), Starting, Running(i64
 #[derive(Clone, Debug, Default)]
 pub struct Traffic { pub up: u64, pub down: u64, pub total_up: u64, pub total_down: u64, pub history: Vec<(u64, u64)> }
 
+/// Which core runs the connection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Engine { Xray, SingBox }
+impl Engine {
+    pub fn name(self) -> &'static str { match self { Engine::Xray => "Xray", Engine::SingBox => "sing-box" } }
+    fn exe(self) -> PathBuf { match self { Engine::Xray => xray_exe(), Engine::SingBox => singbox::exe() } }
+}
+
 #[derive(Clone, Debug)]
 pub struct LogLine { pub time: i64, pub level: char, pub text: String }
 
@@ -35,6 +44,8 @@ pub struct Core {
     pub traffic: Arc<Mutex<Traffic>>,
     pub status: Mutex<Status>,
     stats_stop: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
+    /// The engine of the running (or last started) connection.
+    pub engine: Mutex<Engine>,
 }
 
 pub fn xray_exe() -> PathBuf { core_dir().join("xray.exe") }
@@ -47,7 +58,7 @@ pub fn http_agent() -> ureq::Agent {
 impl Core {
     pub fn new() -> Arc<Self> {
         let c = Arc::new(Self { child: Mutex::new(None), logs: Mutex::new(vec![]), traffic: Arc::new(Mutex::new(Traffic::default())),
-            status: Mutex::new(Status::Stopped), stats_stop: Mutex::new(None) });
+            status: Mutex::new(Status::Stopped), stats_stop: Mutex::new(None), engine: Mutex::new(Engine::Xray) });
         c.kill_orphan();
         c
     }
@@ -68,7 +79,7 @@ impl Core {
     pub fn has_core(&self) -> bool { xray_exe().exists() }
     pub fn is_running(&self) -> bool { matches!(self.status(), Status::Running(_)) }
 
-    fn download(&self, url: &str, label: &str) -> anyhow::Result<Vec<u8>> {
+    pub(crate) fn download(&self, url: &str, label: &str) -> anyhow::Result<Vec<u8>> {
         let resp = http_agent().get(url).call()?;
         let total: Option<u64> = resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
         let mut reader = resp.into_body().into_reader();
@@ -110,6 +121,28 @@ impl Core {
         r
     }
 
+    /// Downloads (or updates) sing-box next to Xray.
+    pub fn install_singbox(&self, force: bool) -> anyhow::Result<()> {
+        if !force && singbox::installed() { return Ok(()); }
+        anyhow::ensure!(!(self.is_running() && *self.engine.lock().unwrap() == Engine::SingBox), "Disconnect before updating the core");
+        let prev = self.status();
+        let r = (|| -> anyhow::Result<()> {
+            let v = singbox::latest_version()?;
+            let zip = self.download(&singbox::download_url(&v), "sing-box")?;
+            singbox::unpack(zip)?;
+            self.log('I', format!("sing-box {v} installed to {}", core_dir().display()));
+            Ok(())
+        })();
+        if matches!(self.status(), Status::Preparing(..)) { self.set_status(if matches!(prev, Status::Preparing(..)) { Status::Stopped } else { prev }); }
+        r
+    }
+
+    pub fn singbox_version(&self) -> Option<String> {
+        if !singbox::installed() { return None; }
+        let out = Command::new(singbox::exe()).arg("version").creation_flags(CREATE_NO_WINDOW).output().ok()?;
+        String::from_utf8_lossy(&out.stdout).lines().next()?.split_whitespace().last().map(str::to_string)
+    }
+
     pub fn update_geo(&self, runetfreedom: bool) -> anyhow::Result<()> {
         let base = if runetfreedom { "https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download" }
                    else { "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download" };
@@ -129,23 +162,31 @@ impl Core {
         String::from_utf8_lossy(&out.stdout).split_whitespace().nth(1).map(str::to_string)
     }
 
-    fn xray(&self, args: &[&str]) -> Command {
-        let mut c = Command::new(xray_exe());
+    fn xray(&self, args: &[&str]) -> Command { self.cmd(Engine::Xray, args) }
+
+    fn cmd(&self, e: Engine, args: &[&str]) -> Command {
+        let mut c = Command::new(e.exe());
         c.args(args).current_dir(core_dir()).env("XRAY_LOCATION_ASSET", core_dir()).creation_flags(CREATE_NO_WINDOW);
         c
     }
 
-    /// `xray run -test`: validates without starting anything. Returns the error text.
+    /// `xray run -test` / `sing-box check`: validates without starting anything. Returns the error text.
     pub fn test_config(&self, path: &std::path::Path) -> Option<String> {
-        let out = self.xray(&["run", "-test", "-c", &path.to_string_lossy()]).output().ok()?;
+        let e = *self.engine.lock().unwrap();
+        let p = path.to_string_lossy();
+        let args: Vec<&str> = match e { Engine::Xray => vec!["run", "-test", "-c", &p], Engine::SingBox => vec!["check", "-c", &p] };
+        let out = self.cmd(e, &args).output().ok()?;
         if out.status.success() { None } else {
             let t = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
             Some(t.lines().filter(|l| !l.trim().is_empty()).rev().take(4).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n"))
         }
     }
 
-    pub fn start(self: &Arc<Self>, config: &str, api_port: u16) -> anyhow::Result<()> {
+    pub fn start(self: &Arc<Self>, config: &str, api_port: u16) -> anyhow::Result<()> { self.start_with(Engine::Xray, config, api_port) }
+
+    pub fn start_with(self: &Arc<Self>, engine: Engine, config: &str, api_port: u16) -> anyhow::Result<()> {
         anyhow::ensure!(self.child.lock().unwrap().is_none(), "The core is already running");
+        *self.engine.lock().unwrap() = engine;
         self.set_status(Status::Starting);
         let cfg_path = home().join("run-config.json");
         std::fs::write(&cfg_path, config)?;
@@ -154,13 +195,15 @@ impl Core {
             self.set_status(Status::Failed(err.clone()));
             anyhow::bail!(err);
         }
-        let mut child = self.xray(&["run", "-c", &cfg_path.to_string_lossy()]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+        let mut child = self.cmd(engine, &["run", "-c", &cfg_path.to_string_lossy()]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
         let _ = std::fs::write(pid_file(), child.id().to_string());
         for pipe in [child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>), child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>)].into_iter().flatten() {
             let me = self.clone();
             std::thread::spawn(move || {
                 for line in BufReader::new(pipe).lines().map_while(Result::ok) {
-                    let lvl = if line.contains("[Error]") { 'E' } else if line.contains("[Warning]") { 'W' } else if line.contains("[Debug]") { 'D' } else { 'I' };
+                    let up = line.to_uppercase();
+                    let lvl = if line.contains("[Error]") || up.contains(" ERROR ") || up.contains("FATAL") { 'E' }
+                        else if line.contains("[Warning]") || up.contains(" WARN ") { 'W' } else if line.contains("[Debug]") || up.contains(" DEBUG ") { 'D' } else { 'I' };
                     let text = line.splitn(3, ' ').nth(2).filter(|_| line.chars().take(4).all(|c| c.is_ascii_digit())).unwrap_or(&line).to_string();
                     me.log(lvl, text);
                 }
@@ -173,7 +216,7 @@ impl Core {
             *self.child.lock().unwrap() = None;
             let _ = std::fs::remove_file(pid_file());
             let tail = self.logs.lock().unwrap().iter().rev().take(3).map(|l| l.text.clone()).collect::<Vec<_>>().join("\n");
-            let err = if tail.is_empty() { format!("Xray exited with code {code}") } else { tail };
+            let err = if tail.is_empty() { format!("{} exited with code {code}", engine.name()) } else { tail };
             self.set_status(Status::Failed(err.clone()));
             anyhow::bail!(err);
         }
@@ -199,7 +242,7 @@ impl Core {
                 *g = None;
                 drop(g);
                 let _ = std::fs::remove_file(pid_file());
-                self.set_status(Status::Failed(format!("Xray exited unexpectedly (code {code})")));
+                self.set_status(Status::Failed(format!("{} exited unexpectedly (code {code})", self.engine.lock().unwrap().name())));
                 return true;
             }
         }
@@ -209,8 +252,10 @@ impl Core {
     fn kill_orphan(&self) {
         let Ok(pid) = std::fs::read_to_string(pid_file()) else { return };
         let pid = pid.trim();
-        // only an xray.exe with that pid
-        let _ = Command::new("taskkill").args(["/F", "/FI", &format!("PID eq {pid}"), "/FI", "IMAGENAME eq xray.exe"]).creation_flags(CREATE_NO_WINDOW).output();
+        // only our own core with that pid
+        for image in ["xray.exe", "sing-box.exe"] {
+            let _ = Command::new("taskkill").args(["/F", "/FI", &format!("PID eq {pid}"), "/FI", &format!("IMAGENAME eq {image}")]).creation_flags(CREATE_NO_WINDOW).output();
+        }
         let _ = std::fs::remove_file(pid_file());
     }
 
@@ -218,10 +263,25 @@ impl Core {
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         *self.stats_stop.lock().unwrap() = Some(stop.clone());
         let me = self.clone();
+        let engine = *self.engine.lock().unwrap();
         std::thread::spawn(move || {
+            let mut last: Option<(u64, u64)> = None;
             while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                 let t0 = std::time::Instant::now();
-                if let Ok(out) = me.xray(&["api", "statsquery", &format!("--server=127.0.0.1:{api_port}"), "-pattern", "outbound>>>", "-reset"]).output() {
+                if engine == Engine::SingBox {
+                    // Clash API totals → per-second deltas
+                    if let Some((tu, td)) = singbox::totals(api_port) {
+                        if let Some((lu, ld)) = last {
+                            let (up, down) = (tu.saturating_sub(lu), td.saturating_sub(ld));
+                            let mut t = me.traffic.lock().unwrap();
+                            t.up = up; t.down = down; t.total_up += up; t.total_down += down;
+                            t.history.push((up, down));
+                            let n = t.history.len();
+                            if n > 60 { t.history.drain(..n - 60); }
+                        }
+                        last = Some((tu, td));
+                    }
+                } else if let Ok(out) = me.xray(&["api", "statsquery", &format!("--server=127.0.0.1:{api_port}"), "-pattern", "outbound>>>", "-reset"]).output() {
                     if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&out.stdout) {
                         let (mut up, mut down) = (0u64, 0u64);
                         for e in v["stat"].as_array().into_iter().flatten() {

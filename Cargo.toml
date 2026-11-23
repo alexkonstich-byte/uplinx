@@ -26,7 +26,7 @@ rqrr = "0.9"
 regex-lite = "0.1"
 qrcode = { version = "0.14", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp"] }
-windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_UI_Controls_Dialogs"] }
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_UI_Controls_Dialogs", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_Storage_FileSystem"] }
 
 [build-dependencies]
 slint-build = "1.19.0"

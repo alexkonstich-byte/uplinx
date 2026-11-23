@@ -190,13 +190,20 @@ pub struct RoutingSettings {
     pub proxy_blocked_ru: bool,
     pub domain_strategy: String,
     pub rules: Vec<RouteRule>,
+    // ready-made rule sets (rule mode)
+    pub preset_streaming: bool,
+    pub preset_ai: bool,
+    pub preset_social: bool,
+    pub preset_games_direct: bool,
+    pub preset_block_torrents: bool,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 impl Default for RoutingSettings {
     fn default() -> Self {
         Self { mode: s("RULE"), bypass_lan: true, bypass_ru: true, block_ads: true, proxy_blocked_ru: false,
-            domain_strategy: s("IPIfNonMatch"), rules: vec![], extra: Map::new() }
+            domain_strategy: s("IPIfNonMatch"), rules: vec![], preset_streaming: false, preset_ai: false, preset_social: false,
+            preset_games_direct: false, preset_block_torrents: false, extra: Map::new() }
     }
 }
 
@@ -291,6 +298,14 @@ pub struct AppSettings {
     pub auto_reconnect: bool,
     /// System proxy mode: if the core dies, keep the proxy pointing at it so nothing leaks past the VPN.
     pub kill_switch: bool,
+    /// The first-start notice (author, licence, terms) was read and accepted.
+    pub disclaimer_accepted: bool,
+    /// Where programs live (exe name in lower case → full path), learned from running processes: for their icons.
+    pub app_paths: BTreeMap<String, String>,
+    /// Measured download speed per server (identity → Mbit/s).
+    pub speeds: BTreeMap<String, f64>,
+    /// "XRAY" or "SINGBOX".
+    pub core: String,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -310,7 +325,7 @@ impl Default for AppSettings {
             hwid: uuid::Uuid::new_v4().simple().to_string()[..16].to_string(), server_sort: s("MANUAL"), mask_addresses: false, ipv6: true,
             show_hidden: false, apply_panel_routing: true, check_updates: true, all_time_up: 0, all_time_down: 0,
             favorites: vec![], collapsed_groups: vec![], window_rect: vec![], window_maximized: false, last_page: 0, mini_pos: vec![],
-            clipboard_offer: true, auto_ping: true, auto_reconnect: true, kill_switch: false, extra: Map::new(),
+            clipboard_offer: true, auto_ping: true, auto_reconnect: true, kill_switch: false, disclaimer_accepted: false, app_paths: BTreeMap::new(), speeds: BTreeMap::new(), core: s("XRAY"), extra: Map::new(),
         }
     }
 }

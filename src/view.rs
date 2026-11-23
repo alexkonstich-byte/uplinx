@@ -3,7 +3,7 @@
 use crate::app::{App, PING_TESTING};
 use crate::core::{probe::SpeedPhase, Status};
 use crate::model::*;
-use crate::{t, AppWindow, Bar, FieldItem, LogItem, NodeItem, Routing, Settings, SiteItem, SpeedRow, SubItem, RuleItem, Ui, WidgetItem};
+use crate::{t, AppItem, AppWindow, Bar, FieldItem, LogItem, NodeItem, Routing, Settings, SiteItem, SpeedRow, SubItem, RuleItem, Ui, WidgetItem};
 use slint::{ComponentHandle, Image, ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -21,6 +21,7 @@ pub struct View {
     pub logs_paused: bool,
     flags: HashMap<String, Option<Image>>,
     logos: HashMap<String, Option<Image>>,
+    icons: HashMap<String, Option<Image>>,
     sig_nodes: u64,
     sig_subs: u64,
     sig_rules: u64,
@@ -65,6 +66,20 @@ impl View {
         }).clone()
     }
 
+    /// A program's icon by exe name, from the path seen when it was running.
+    pub fn app_icon(&mut self, name: &str, paths: &std::collections::BTreeMap<String, String>) -> Option<Image> {
+        let path = paths.get(&name.to_lowercase())?.clone();
+        self.icons.entry(path.clone()).or_insert_with(|| {
+            let (px, size) = crate::win::file_icon(&path)?;
+            Some(Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(&px, size, size)))
+        }).clone()
+    }
+
+    pub fn app_item(&mut self, name: &str, paths: &std::collections::BTreeMap<String, String>) -> AppItem {
+        let icon = self.app_icon(name, paths);
+        AppItem { name: ss(name), has_icon: icon.is_some(), icon: icon.unwrap_or_default() }
+    }
+
     fn logo(&mut self, path: &str) -> Option<Image> {
         if path.is_empty() { return None; }
         self.logos.entry(path.to_string()).or_insert_with(|| {
@@ -87,6 +102,7 @@ impl View {
             ping: if testing { PING_TESTING } else { pings.get(&n.id).copied().unwrap_or(PING_UNKNOWN) }, testing,
             selected: n.id == sel, hidden: st.hidden.contains(&n.identity()), count: 0,
             favorite: st.settings.favorites.contains(&n.identity()), collapsed: false,
+            speed: ss(st.settings.speeds.get(&n.identity()).map(|v| format!("{v:.0} Mbps")).unwrap_or_default()),
         }
     }
 
@@ -203,10 +219,25 @@ impl View {
         ui.set_speed_history(model(st.settings.speed_results.iter().rev().take(10).map(|r| SpeedRow {
             name: ss(&r.node_name), down: ss(mbps(Some(r.down_mbps))), up: ss(mbps(Some(r.up_mbps))), ping: ss(format!("{} ms", r.ping_ms)), when: ss(ago(r.at)) }).collect()));
 
+        // ---- speedometer: a running test, else live download, else the last test
+        let (val, caption) = if let Some(p) = sp.as_ref().filter(|_| running) {
+            (match p.phase { SpeedPhase::Download | SpeedPhase::Upload => p.mbps, _ => 0.0 },
+             match p.phase { SpeedPhase::Upload => t!("Upload"), SpeedPhase::Download => t!("Download"), _ => t!("Preparing…") })
+        } else if matches!(status, Status::Running(_)) {
+            (traffic.down as f64 * 8.0 / 1e6, t!("Live download"))
+        } else if let Some(r) = last { (r.down_mbps, t!("Last test")) } else { (0.0, t!("Tap to test")) };
+        let scale = [10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0].into_iter().find(|m| val <= *m).unwrap_or(10_000.0);
+        ui.set_gauge_value(ss(if val >= 100.0 { format!("{val:.0}") } else { format!("{val:.1}") }));
+        ui.set_gauge_caption(ss(caption));
+        ui.set_gauge_max(ss(format!("{scale:.0}")));
+        ui.set_gauge_track(ss(arc_band(1.0)));
+        ui.set_gauge_fill(ss(arc_band(val / scale)));
+
         // ---- servers
         let sig = hash(&(st.nodes.iter().map(|n| (&n.id, &n.name, &n.address, n.port)).collect::<Vec<_>>(), &pings.iter().collect::<std::collections::BTreeMap<_, _>>(),
             &testing.iter().collect::<std::collections::BTreeSet<_>>(), &sel_id, &self.search, &st.settings.server_sort, st.settings.show_hidden, st.settings.mask_addresses, &st.hidden,
-            st.subscriptions.iter().map(|s| (&s.id, &s.name)).collect::<Vec<_>>(), &st.settings.favorites, &st.settings.collapsed_groups));
+            st.subscriptions.iter().map(|s| (&s.id, &s.name)).collect::<Vec<_>>(), (&st.settings.favorites, &st.settings.collapsed_groups,
+            st.settings.speeds.iter().map(|(k, v)| (k, (*v * 10.0) as i64)).collect::<Vec<_>>(), crate::i18n::is_ru())));
         if sig != self.sig_nodes {
             self.sig_nodes = sig;
             let q = self.search.to_lowercase();
@@ -219,10 +250,31 @@ impl View {
                 "NAME" => visible.sort_by_key(|n| split_flag(&n.name).1.to_lowercase()),
                 "PING" => visible.sort_by_key(|n| pk(n)),
                 "RECENT" => visible.sort_by_key(|n| -n.last_used_at),
+                "SPEED" => visible.sort_by_key(|n| -(st.settings.speeds.get(&n.identity()).copied().unwrap_or(-1.0) * 10.0) as i64),
+                "COUNTRY" => visible.sort_by_key(|n| pk(n)),
                 _ => {}
             }
             let has_fav = visible.iter().any(|n| fav(n));
-            if st.settings.server_sort == "MANUAL" && (!st.subscriptions.is_empty() || has_fav) {
+            if st.settings.server_sort == "COUNTRY" {
+                // one group per country flag, the best ping on the header
+                let mut groups: Vec<(String, Vec<&ProxyNode>)> = vec![];
+                for n in &visible {
+                    let code = split_flag(&n.name).0.and_then(|f| crate::countries::code_of_flag(&f)).unwrap_or_else(|| "??".into());
+                    match groups.iter_mut().find(|g| g.0 == code) { Some(g) => g.1.push(n), None => groups.push((code, vec![n])) }
+                }
+                groups.sort_by_key(|g| (g.0 == "??", crate::countries::name(&g.0)));
+                for (code, members) in groups {
+                    let gid = format!("cc:{code}");
+                    let folded = st.settings.collapsed_groups.contains(&gid);
+                    let best = members.iter().filter_map(|n| pings.get(&n.id).copied().filter(|&p| p >= 0)).min().unwrap_or(PING_UNKNOWN);
+                    let flag = crate::view::flag_for_code(&code).and_then(|f| self.flag(&f));
+                    let name = if code == "??" { t!("Other") } else { crate::countries::name(&code) };
+                    items.push(NodeItem { id: ss(&gid), header: true, name: ss(name), count: members.len() as i32, collapsed: folded, ping: best,
+                        has_flag: flag.is_some(), flag: flag.unwrap_or_default(), ..Default::default() });
+                    if folded { continue; }
+                    for n in members { items.push(self.node_item(n, &st, &pings, testing.contains(&n.id), &sel_id)); }
+                }
+            } else if st.settings.server_sort == "MANUAL" && (!st.subscriptions.is_empty() || has_fav) {
                 // favourites get their own group on top; every group can be folded
                 let mut groups: Vec<(String, String)> = vec![];
                 if has_fav { groups.push(("fav".into(), t!("Favourites"))); }
@@ -238,7 +290,7 @@ impl View {
                     }).collect();
                     if members.is_empty() { continue; }
                     let folded = st.settings.collapsed_groups.contains(&gid);
-                    items.push(NodeItem { id: ss(&gid), header: true, name: ss(&gname), count: members.len() as i32, collapsed: folded, ..Default::default() });
+                    items.push(NodeItem { id: ss(&gid), header: true, name: ss(&gname), count: members.len() as i32, collapsed: folded, ping: PING_UNKNOWN, ..Default::default() });
                     if folded { continue; }
                     for n in members { items.push(self.node_item(n, &st, &pings, testing.contains(&n.id), &sel_id)); }
                 }
@@ -254,6 +306,10 @@ impl View {
             ui.set_top_nodes(model(top_items));
         }
         ui.set_pinging(!testing.is_empty());
+        match app.speed_all.lock().unwrap().clone() {
+            Some((done, total, name)) => { ui.set_speed_all_running(true); ui.set_speed_all_text(ss(t!("Measuring speed %1/%2 · %3", done + 1, total, name))); }
+            None => ui.set_speed_all_running(false),
+        }
         ui.set_has_servers(!st.nodes.is_empty() || !st.subscriptions.is_empty());
 
         // ---- subscriptions
@@ -284,16 +340,23 @@ impl View {
 
         // ---- routing
         let r = &st.routing;
-        let sig = hash(&(serde_json::to_string(r).unwrap_or_default(), serde_json::to_string(&st.settings.split).unwrap_or_default()));
+        let sig = hash(&(serde_json::to_string(r).unwrap_or_default(), serde_json::to_string(&st.settings.split).unwrap_or_default(), st.settings.app_paths.len()));
         if sig != self.sig_rules {
             self.sig_rules = sig;
-            ui.set_rules(model(r.rules.iter().map(|x| RuleItem { id: ss(&x.id), kind: ss(&x.kind), value: ss(&x.value), action: ss(&x.action), enabled: x.enabled }).collect()));
+            let rules: Vec<RuleItem> = r.rules.iter().map(|x| {
+                let icon = if x.kind == "PROCESS" { self.app_icon(x.value.split(',').next().unwrap_or("").trim(), &st.settings.app_paths) } else { None };
+                RuleItem { id: ss(&x.id), kind: ss(&x.kind), value: ss(&x.value), action: ss(&x.action), enabled: x.enabled, has_icon: icon.is_some(), icon: icon.unwrap_or_default() }
+            }).collect();
+            ui.set_rules(model(rules));
             ui.set_routing(Routing {
                 mode: match r.mode.as_str() { "GLOBAL" => 1, "DIRECT" => 2, _ => 0 }, bypass_lan: r.bypass_lan, bypass_ru: r.bypass_ru, block_ads: r.block_ads,
                 proxy_blocked_ru: r.proxy_blocked_ru, domain_strategy: match r.domain_strategy.as_str() { "AsIs" => 0, "IPOnDemand" => 2, _ => 1 },
                 split_enabled: st.settings.split.enabled, split_mode: if st.settings.split.mode == "INCLUDE" { 1 } else { 0 },
+                preset_streaming: r.preset_streaming, preset_ai: r.preset_ai, preset_social: r.preset_social,
+                preset_games: r.preset_games_direct, preset_torrents: r.preset_block_torrents,
             });
-            ui.set_split_apps(model(st.settings.split.apps.iter().map(ss).collect()));
+            let apps: Vec<AppItem> = st.settings.split.apps.iter().map(|a| self.app_item(a, &st.settings.app_paths)).collect();
+            ui.set_split_apps(model(apps));
         }
 
         // ---- widgets
@@ -337,8 +400,9 @@ impl View {
                 apply_panel_routing: s.apply_panel_routing, minimize_to_tray: s.minimize_to_tray, auto_connect: s.auto_connect,
                 autostart: crate::win::autostart(), check_updates: s.check_updates, notify_connection: s.notify_connection, notify_errors: s.notify_errors,
                 notify_subscription: s.notify_subscription, notify_updates: s.notify_updates, mask_addresses: s.mask_addresses, show_hidden: s.show_hidden,
-                server_sort: match s.server_sort.as_str() { "NAME" => 1, "PING" => 2, "RECENT" => 3, _ => 0 }, hwid: ss(&s.hwid),
+                server_sort: match s.server_sort.as_str() { "NAME" => 1, "PING" => 2, "RECENT" => 3, "SPEED" => 4, "COUNTRY" => 5, _ => 0 }, hwid: ss(&s.hwid),
                 clipboard_offer: s.clipboard_offer, auto_ping: s.auto_ping, auto_reconnect: s.auto_reconnect, kill_switch: s.kill_switch,
+                engine: if s.core == "SINGBOX" { 1 } else { 0 },
             });
         }
 
@@ -360,6 +424,8 @@ impl View {
         ui.set_whats_new(wn.is_some());
         if let Some(u) = wn { ui.set_whats_new_version(ss(&u.version)); ui.set_whats_new_notes(ss(plain_notes(&u.notes))); }
         ui.set_core_version(ss(app.core_version()));
+        ui.set_singbox_version(ss(app.singbox_version()));
+        ui.set_show_disclaimer(!st.settings.disclaimer_accepted);
         ui.set_is_admin(crate::win::is_admin());
     }
 
@@ -447,6 +513,21 @@ fn expire_text(s: &Subscription) -> String {
 fn norm(v: &[f64], max: f64) -> ModelRc<f32> { model(v.iter().map(|x| (x / max.max(1e-9)) as f32).collect()) }
 
 #[allow(dead_code)]
+/// A 270° gauge band (100 x 100 box) filled to `f` (0..1), with round ends.
+pub fn arc_band(f: f64) -> String {
+    let f = f.clamp(0.0, 1.0);
+    if f < 0.005 { return String::new(); }
+    let (c, ro, ri) = (50.0f64, 47.0f64, 37.0f64);
+    let rc = (ro - ri) / 2.0;
+    let a0 = 135f64.to_radians();
+    let a1 = (135.0 + 270.0 * f).to_radians();
+    let p = |r: f64, a: f64| (c + r * a.cos(), c + r * a.sin());
+    let large = if 270.0 * f > 180.0 { 1 } else { 0 };
+    let (o0, o1, i1, i0) = (p(ro, a0), p(ro, a1), p(ri, a1), p(ri, a0));
+    format!("M {:.2} {:.2} A {ro} {ro} 0 {large} 1 {:.2} {:.2} A {rc} {rc} 0 0 1 {:.2} {:.2} A {ri} {ri} 0 {large} 0 {:.2} {:.2} A {rc} {rc} 0 0 1 {:.2} {:.2} Z",
+        o0.0, o0.1, o1.0, o1.1, i1.0, i1.1, i0.0, i0.1, o0.0, o0.1)
+}
+
 /// SVG path in a 100 x 40 box.
 pub fn chart(v: &[f64], max: f64, area: bool) -> String {
     if v.len() < 2 { return String::new(); }

@@ -3,6 +3,7 @@
 
 mod app;
 mod core;
+mod countries;
 #[macro_use]
 mod i18n;
 mod model;
@@ -281,11 +282,19 @@ fn main() -> anyhow::Result<()> {
     }
 
     if let Some(p) = args.iter().find_map(|a| a.strip_prefix("--page=")).and_then(|p| p.parse().ok()) { w.global::<Nav>().set_page(p); }
-    if args.iter().any(|a| a == "--connect") || st.settings.auto_connect { app.connect(); }
+    // for screenshots of dialogs: --dialog=<name>[:<argument>]
+    if let Some(d) = args.iter().find_map(|a| a.strip_prefix("--dialog=")) {
+        let (name, arg) = d.split_once(':').unwrap_or((d, ""));
+        if name == "processes" { w.global::<Logic>().invoke_refresh_processes(); }
+        w.global::<Nav>().set_b(arg.into());
+        w.global::<Nav>().set_dialog(name.into());
+    }
+    // nothing connects before the first-start notice was accepted
+    if st.settings.disclaimer_accepted && (args.iter().any(|a| a == "--connect") || st.settings.auto_connect) { app.connect(); }
     if args.iter().any(|a| a == "--minimized") { sh.hidden.set(true); } else {
         w.show()?;
         if st.settings.window_maximized { w.window().set_maximized(true); w.set_is_maximized(true); }
-        sh.check_clipboard(); // opened right after copying a link: offer it at once
+        if st.settings.disclaimer_accepted { sh.check_clipboard(); } // opened right after copying a link: offer it at once
     }
     sh.tick();
     slint::run_event_loop_until_quit()?;
@@ -324,7 +333,7 @@ fn wire(sh: &Rc<Shell>) {
     on!(on_ping_node, |s, id| s.app.ping_all(Some(vec![id.to_string()])));
     on!(on_ping_current, |s| s.app.ping_current());
     on!(on_search, |s, q| { s.view.borrow_mut().search = q.to_string(); s.app.bump(); });
-    on!(on_set_sort, |s, i| s.app.update_settings(|x| x.server_sort = ["MANUAL", "NAME", "PING", "RECENT"][i.clamp(0, 3) as usize].into()));
+    on!(on_set_sort, |s, i| s.app.update_settings(|x| x.server_sort = ["MANUAL", "NAME", "PING", "RECENT", "SPEED", "COUNTRY"][i.clamp(0, 5) as usize].into()));
     on!(on_toggle_group, |s, id| s.app.toggle_group(&id));
     on!(on_connect_fastest, |s| s.app.connect_fastest());
     on!(on_clip_accept, |s| {
@@ -425,7 +434,9 @@ fn wire(sh: &Rc<Shell>) {
     // ---- routing
     on!(on_set_routing_bool, |s, key, v| match key.as_str() {
         "split-enabled" => s.app.update_settings(|x| x.split.enabled = v),
-        k => s.app.update_routing(|r| match k { "bypass-lan" => r.bypass_lan = v, "bypass-ru" => r.bypass_ru = v, "block-ads" => r.block_ads = v, "proxy-blocked-ru" => r.proxy_blocked_ru = v, _ => {} }),
+        k => s.app.update_routing(|r| match k { "preset-streaming" => r.preset_streaming = v, "preset-ai" => r.preset_ai = v,
+            "preset-social" => r.preset_social = v, "preset-games" => r.preset_games_direct = v, "preset-torrents" => r.preset_block_torrents = v,
+            "bypass-lan" => r.bypass_lan = v, "bypass-ru" => r.bypass_ru = v, "block-ads" => r.block_ads = v, "proxy-blocked-ru" => r.proxy_blocked_ru = v, _ => {} }),
     });
     on!(on_set_domain_strategy, |s, i| s.app.update_routing(|r| r.domain_strategy = ["AsIs", "IPIfNonMatch", "IPOnDemand"][i.clamp(0, 2) as usize].into()));
     on!(on_save_rule, |s, id, kind, value, action| {
@@ -443,9 +454,22 @@ fn wire(sh: &Rc<Shell>) {
     });
     on!(on_split_remove, |s, name| s.app.update_settings(|x| x.split.apps.retain(|a| a != name.as_str())));
     on!(on_refresh_processes, |s| {
-        let list: Vec<slint::SharedString> = win::running_processes().into_iter().map(Into::into).collect();
-        s.w.global::<Ui>().set_processes(slint::ModelRc::new(slint::VecModel::from(list)));
+        let progs = win::running_programs();
+        // remember where programs live, so their icons show even when they are not running
+        let mut paths = s.app.settings().app_paths;
+        let before = paths.len();
+        for (name, path) in &progs { paths.insert(name.to_lowercase(), path.clone()); }
+        if paths.len() != before { let p = paths.clone(); s.app.edit(|st| st.settings.app_paths = p); }
+        let items: Vec<AppItem> = progs.iter().map(|(name, _)| s.view.borrow_mut().app_item(name, &paths)).collect();
+        s.w.global::<Ui>().set_processes(slint::ModelRc::new(slint::VecModel::from(items)));
     });
+    on!(on_rule_from_app, |s, name, action| {
+        let rule = model::RouteRule { kind: "PROCESS".into(), value: name.to_string(), action: action.to_string(), ..Default::default() };
+        s.app.upsert_rule(rule);
+        s.app.notify(t!("Rule added: %1", name), None);
+    });
+    on!(on_speed_all, |s| s.app.speed_all());
+    on!(on_speed_all_stop, |s| s.app.speed_all_stop());
 
     // ---- settings
     on!(on_set_bool, |s, key, v| match key.as_str() {
@@ -468,6 +492,10 @@ fn wire(sh: &Rc<Shell>) {
             "geo-source" => { s.app.update_settings(|x| x.geo_source = if i == 1 { "RUNETFREEDOM".into() } else { "XRAY".into() }); s.app.update_geo(); }
             "client-spoof" => s.app.update_settings(|x| x.client_spoof = ["NONE", "HAPP", "INCY"][i.clamp(0, 2) as usize].into()),
             "split-mode" => s.app.update_settings(|x| x.split.mode = if i == 1 { "INCLUDE".into() } else { "EXCLUDE".into() }),
+            "engine" => {
+                s.app.update_settings(|x| x.core = if i == 1 { "SINGBOX".into() } else { "XRAY".into() });
+                if i == 1 && !core::singbox::installed() { s.app.update_singbox(); } // fetch it now, not on connect
+            }
             _ => {}
         }
         if key.as_str() == "theme-mode" || key.as_str() == "color-source" { let st = s.app.settings(); theme::apply(&s.w, &s.mini, &st); }
@@ -491,6 +519,7 @@ fn wire(sh: &Rc<Shell>) {
         let st = s.app.settings(); theme::apply(&s.w, &s.mini, &st);
     });
     on!(on_update_core, |s| s.app.update_core());
+    on!(on_update_singbox, |s| s.app.update_singbox());
     on!(on_update_geo, |s| s.app.update_geo());
     on!(on_check_updates, |s| { let a = s.app.clone(); std::thread::spawn(move || a.check_updates(true)); });
     on!(on_install_update, |s| s.app.install_update());
@@ -520,6 +549,11 @@ fn wire(sh: &Rc<Shell>) {
     on!(on_check_sites, |s| s.app.check_sites());
     on!(on_set_sites, |s, text| { s.app.set_sites(text.lines().map(str::to_string).collect()); s.app.check_sites(); });
     on!(on_run_speed_test, |s| s.app.run_speed_test(None));
+    on!(on_accept_disclaimer, |s| {
+        s.app.edit(|st| st.settings.disclaimer_accepted = true);
+        s.check_clipboard();
+    });
+    on!(on_quit, |s| s.quit());
 
     // ---- misc
     on!(on_message_action, |s| {

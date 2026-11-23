@@ -177,6 +177,32 @@ impl Read for UpBody<'_> {
     }
 }
 
+/// Download speed only, for a few seconds: used to rank many servers by real throughput.
+pub fn quick_speed(n: &ProxyNode, s: &AppSettings, secs: f64, cancel: &AtomicBool) -> Option<f64> {
+    let target = targets(n, s).into_iter().next()?;
+    let port = free_ports(1).first().copied()?;
+    let mut o = target.outbound; o["tag"] = json!("out");
+    let cfg = json!({"log": {"loglevel": "none"}, "inbounds": [{"tag": "in", "protocol": "http", "listen": "127.0.0.1", "port": port}], "outbounds": [bind(o, &physical_interface())]});
+    let _proc = spawn(&cfg).ok()?;
+    let agent: ureq::Agent = ureq::Agent::config_builder().proxy(ureq::Proxy::new(&format!("http://127.0.0.1:{port}")).ok())
+        .timeout_connect(Some(Duration::from_secs(6))).timeout_global(Some(Duration::from_secs(secs as u64 + 10))).http_status_as_error(false).build().into();
+    let resp = agent.get(DOWN_URL).call().ok()?;
+    if resp.status().as_u16() >= 400 { return None; }
+    let mut body = resp.into_body();
+    let mut r = body.as_reader();
+    let mut buf = vec![0u8; 256 * 1024];
+    let (t0, mut total) = (Instant::now(), 0u64);
+    loop {
+        if cancel.load(Ordering::Relaxed) { return None; }
+        let k = r.read(&mut buf).unwrap_or(0);
+        if k == 0 { break; }
+        total += k as u64;
+        if t0.elapsed().as_secs_f64() >= secs { break; }
+    }
+    let el = t0.elapsed().as_secs_f64();
+    (total > 64 * 1024).then(|| mbps(total, el))
+}
+
 pub fn speed_test(n: &ProxyNode, s: &AppSettings, cancel: &AtomicBool, cb: &dyn Fn(SpeedProgress)) -> anyhow::Result<SpeedResult> {
     cb(SpeedProgress::default());
     anyhow::ensure!(xray_exe().exists(), "core missing");

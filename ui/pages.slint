@@ -1,6 +1,6 @@
 import { ListView, ScrollView } from "std-widgets.slint";
 import { Theme, Ds, Logo, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Label, Row, Shape, Avatar, Field, Progress, Spark } from "theme.slint";
-import { Ui, Logic, NodeItem, SubItem, RuleItem } from "data.slint";
+import { Ui, Logic, NodeItem, SubItem, RuleItem, AppItem } from "data.slint";
 import { Shapes } from "shapes.slint";
 
 /** Navigation + dialog state shared by all screens. */
@@ -42,8 +42,10 @@ component NodeRow inherits Rectangle {
         HorizontalLayout {
             padding-left: Ds.s3; padding-top: Ds.s3; spacing: Ds.s2; alignment: start;
             Icon { glyph: root.n.collapsed ? "\u{e5cc}" : "\u{e5cf}"; font-size: 18px; width: 20px; color: Theme.primary; }
+            if root.n.has-flag: Image { source: root.n.flag; width: 20px; height: 20px; y: (parent.height - self.height) / 2 + Ds.s3 / 2; }
             Text { text: root.n.name; font-size: 13px; font-weight: 700; color: Theme.primary; vertical-alignment: center; overflow: elide; }
             Text { text: root.n.count; font-size: 12px; color: Theme.on-surface-variant; vertical-alignment: center; }
+            if root.n.ping >= 0: Text { text: "· " + @tr("best {} ms", root.n.ping); font-size: 12px; color: Theme.good; vertical-alignment: center; }
         }
     }
     if !root.n.header: Rectangle {
@@ -65,6 +67,10 @@ component NodeRow inherits Rectangle {
                 }
                 Text { text: root.n.detail; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; }
             }
+            if root.n.speed != "": VerticalLayout { alignment: center; Rectangle {
+                height: 28px; width: st.preferred-width + 24px; border-radius: self.height / 2; background: Theme.tertiary.with-alpha(0.14);
+                st := Text { text: root.n.speed; font-size: 12px; font-weight: 600; color: Theme.tertiary; }
+            } }
             VerticalLayout { alignment: center; PingChip { ping: root.n.ping; testing: root.n.testing; clicked => { Logic.ping-node(root.n.id); } } }
             VerticalLayout { alignment: center; IconButton { glyph: "\u{e5d4}"; tooltip: @tr("More"); clicked => { menu.show(); } } }
         }
@@ -131,8 +137,17 @@ export component ServersPage inherits Rectangle {
             Chip { text: @tr("Name"); selected: Ui.settings.server-sort == 1; clicked => { Logic.set-sort(1); } }
             Chip { text: @tr("Ping"); selected: Ui.settings.server-sort == 2; clicked => { Logic.set-sort(2); } }
             Chip { text: @tr("Recent"); selected: Ui.settings.server-sort == 3; clicked => { Logic.set-sort(3); } }
+            Chip { text: @tr("Speed"); selected: Ui.settings.server-sort == 4; clicked => { Logic.set-sort(4); } }
+            Chip { text: @tr("Countries"); selected: Ui.settings.server-sort == 5; clicked => { Logic.set-sort(5); } }
             Rectangle { width: Ds.s4; }
             Chip { text: @tr("Hidden"); glyph: "\u{e8f4}"; selected: Ui.settings.show-hidden; clicked => { Logic.set-bool("show-hidden", !Ui.settings.show-hidden); } }
+            Rectangle { horizontal-stretch: 1; }
+            if Ui.speed-all-running: Text { text: Ui.speed-all-text; font-size: 12px; color: Theme.on-surface-variant; vertical-alignment: center; overflow: elide; }
+            Chip {
+                text: Ui.speed-all-running ? @tr("Stop") : @tr("Measure speed");
+                glyph: Ui.speed-all-running ? "\u{e047}" : "\u{e9e4}";
+                clicked => { if Ui.speed-all-running { Logic.speed-all-stop(); } else { Logic.speed-all(); } }
+            }
         }
         if Ui.nodes.length == 0: VerticalLayout {
             alignment: center; spacing: 12px; vertical-stretch: 1;
@@ -257,6 +272,7 @@ component RuleRow inherits Rectangle {
             }
         } }
         Text { text: root.r.kind; font-size: 11px; color: Theme.on-surface-variant; vertical-alignment: center; width: 70px; }
+        if root.r.has-icon: Image { source: root.r.icon; width: 24px; height: 24px; y: (parent.height - self.height) / 2; }
         Text { text: root.r.value; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
         IconButton { glyph: "\u{e5ce}"; tooltip: @tr("Move up"); enabled: root.index > 0; clicked => { Logic.move-rule(root.r.id, -1); } }
         IconButton { glyph: "\u{e5cf}"; tooltip: @tr("Move down"); enabled: root.index < root.total - 1; clicked => { Logic.move-rule(root.r.id, 1); } }
@@ -290,6 +306,18 @@ export component RoutingPage inherits Rectangle {
                     }
                 }
             }
+            Text { text: @tr("Ready-made rules"); font-size: 14px; font-weight: 700; color: Theme.primary; }
+            Card {
+                min-height: pr.preferred-height;
+                pr := VerticalLayout {
+                    padding-top: Ds.s2; padding-bottom: Ds.s2;
+                    Row { title: @tr("Streaming through the VPN"); subtitle: "YouTube, Netflix, Spotify, Twitch, Disney+, HBO, Prime Video"; Switch { checked: Ui.routing.preset-streaming; toggled(v) => { Logic.set-routing-bool("preset-streaming", v); } } }
+                    Row { title: @tr("AI services through the VPN"); subtitle: "ChatGPT, Claude, Gemini"; Switch { checked: Ui.routing.preset-ai; toggled(v) => { Logic.set-routing-bool("preset-ai", v); } } }
+                    Row { title: @tr("Social networks through the VPN"); subtitle: "Telegram, Discord, Instagram, Facebook, X, TikTok, WhatsApp"; Switch { checked: Ui.routing.preset-social; toggled(v) => { Logic.set-routing-bool("preset-social", v); } } }
+                    Row { title: @tr("Games directly"); subtitle: @tr("Steam, Epic and game services skip the VPN for lower ping"); Switch { checked: Ui.routing.preset-games; toggled(v) => { Logic.set-routing-bool("preset-games", v); } } }
+                    Row { title: @tr("Block torrents"); subtitle: @tr("BitTorrent traffic is dropped — many VPN services forbid it"); Switch { checked: Ui.routing.preset-torrents; toggled(v) => { Logic.set-routing-bool("preset-torrents", v); } } }
+                }
+            }
             Card {
                 min-height: rc.preferred-height;
                 rc := VerticalLayout {
@@ -318,6 +346,7 @@ export component RoutingPage inherits Rectangle {
             HorizontalLayout {
                 padding-top: Ds.s2; spacing: Ds.s2;
                 Text { text: @tr("Rules"); font-size: 14px; font-weight: 700; color: Theme.primary; vertical-alignment: center; horizontal-stretch: 1; }
+                Button { kind: 2; glyph: "\u{e5c3}"; text: @tr("Programs"); clicked => { Logic.refresh-processes(); Nav.b = "rule"; Nav.dialog = "processes"; } }
                 Button { kind: 2; text: @tr("RU preset"); clicked => { Logic.apply-preset("ru"); } }
                 Button { glyph: "\u{e145}"; text: @tr("Add rule"); clicked => { Nav.a = ""; Nav.b = "DOMAIN"; Nav.c = ""; Nav.d = "PROXY"; Nav.dialog = "rule"; } }
             }
@@ -338,15 +367,16 @@ export component RoutingPage inherits Rectangle {
                     spacing: Ds.s2;
                     app-field := Field { label: @tr("Program"); placeholder: "telegram.exe"; horizontal-stretch: 1; accepted(t) => { Logic.split-add(t); self.text = ""; } }
                     VerticalLayout { alignment: center; Button { glyph: "\u{e145}"; text: @tr("Add"); clicked => { Logic.split-add(app-field.text); app-field.text = ""; } } }
-                    VerticalLayout { alignment: center; Button { kind: 2; glyph: "\u{e8b6}"; text: @tr("Running apps"); clicked => { Logic.refresh-processes(); Nav.dialog = "processes"; } } }
+                    VerticalLayout { alignment: center; Button { kind: 2; glyph: "\u{e8b6}"; text: @tr("Running apps"); clicked => { Logic.refresh-processes(); Nav.b = "split"; Nav.dialog = "processes"; } } }
                 }
                 if Ui.split-apps.length > 0: VerticalLayout { spacing: Ds.list-gap; for app in Ui.split-apps: Rectangle {
                     height: 56px; border-radius: Ds.r-m; background: Theme.surface-container;
                     HorizontalLayout {
                         padding-left: Ds.s4; padding-right: Ds.s2; padding-top: Ds.s2; padding-bottom: Ds.s2; spacing: Ds.s3;
-                        Icon { glyph: "\u{e5c3}"; font-size: 20px; width: 24px; color: Theme.on-surface-variant; }
-                        Text { text: app; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
-                        IconButton { glyph: "\u{e5cd}"; tooltip: @tr("Remove"); clicked => { Logic.split-remove(app); } }
+                        if app.has-icon: Image { source: app.icon; width: 24px; height: 24px; y: (parent.height - self.height) / 2; }
+                        if !app.has-icon: Icon { glyph: "\u{e5c3}"; font-size: 20px; width: 24px; color: Theme.on-surface-variant; }
+                        Text { text: app.name; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                        IconButton { glyph: "\u{e5cd}"; tooltip: @tr("Remove"); clicked => { Logic.split-remove(app.name); } }
                     }
                 } }
             }
@@ -482,6 +512,9 @@ export component SettingsPage inherits Rectangle {
 
             Section {
                 title: @tr("Core");
+                Row { title: @tr("Engine"); subtitle: @tr("sing-box is lighter on some systems; servers it can't run (xhttp, Xray JSON, AmneziaWG) always use Xray");
+                    Segmented { width: 260px; options: ["Xray", "sing-box"]; index: Ui.settings.engine; picked(i) => { Logic.set-int("engine", i); } } }
+                if Ui.settings.engine == 1: Row { title: "sing-box"; subtitle: Ui.singbox-version; Button { kind: 1; glyph: "\u{e2c4}"; text: @tr("Update"); clicked => { Logic.update-singbox(); } } }
                 Row { title: "Xray-core"; subtitle: Ui.core-version; Button { kind: 1; glyph: "\u{e2c4}"; text: @tr("Update"); clicked => { Logic.update-core(); } } }
                 Row { title: @tr("Geo source"); subtitle: @tr("runetfreedom has up-to-date lists of sites blocked in Russia"); Segmented { width: 330px; options: ["v2fly", @tr("runetfreedom (RU)")]; index: Ui.settings.geo-source; picked(i) => { Logic.set-int("geo-source", i); } } }
                 Row { title: @tr("Geo databases"); Button { kind: 1; glyph: "\u{e5d5}"; text: @tr("Update"); clicked => { Logic.update-geo(); } } }

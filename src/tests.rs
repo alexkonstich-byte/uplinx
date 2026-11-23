@@ -246,7 +246,8 @@ fn dump_sample_configs() {
     let rule = |kind: &str, value: &str, action: &str| RouteRule { kind: kind.into(), value: value.into(), action: action.into(), ..Default::default() };
     let mut rr = RoutingSettings::default();
     rr.rules = vec![rule("DOMAIN", "example.org", "DIRECT"), rule("PROCESS", "telegram.exe", "PROXY"), rule("PORT", "6881-6889", "BLOCK")];
-    let routings = [("rule", rr), ("global", RoutingSettings { mode: "GLOBAL".into(), ..Default::default() }), ("direct", RoutingSettings { mode: "DIRECT".into(), ..Default::default() })];
+    let presets = RoutingSettings { preset_streaming: true, preset_ai: true, preset_social: true, preset_games_direct: true, preset_block_torrents: true, ..Default::default() };
+    let routings = [("rule", rr), ("presets", presets), ("global", RoutingSettings { mode: "GLOBAL".into(), ..Default::default() }), ("direct", RoutingSettings { mode: "DIRECT".into(), ..Default::default() })];
     let mut s = AppSettings::default();
     s.mux = true;
     for (name, n) in &nodes {
@@ -353,4 +354,54 @@ fn route_check_with_real_geo() {
 fn release_notes_as_plain_text() {
     let t = crate::view::plain_notes("## Uplinx 2.0.2\n\n- **Bold** and `code`\n\n**Downloads**\n- `x.msi`");
     assert_eq!(t, "Uplinx 2.0.2\n\n•  Bold and code");
+}
+
+#[test]
+fn singbox_configs() {
+    use crate::core::singbox::{build_value, supports};
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/singbox-configs");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let links = [
+        ("vless-reality", "vless://11111111-2222-3333-4444-555555555555@example.com:443?type=tcp&security=reality&sni=www.microsoft.com&fp=chrome&pbk=SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc&sid=ab12&flow=xtls-rprx-vision#a"),
+        ("trojan-grpc", "trojan://pw@t.example:443?type=grpc&serviceName=svc&sni=t.example#tr"),
+        ("hy2", "hy2://secret@hy.example:8443?sni=hy.example&obfs=salamander&obfs-password=ob#hy"),
+    ];
+    let mut nodes: Vec<(&str, ProxyNode)> = links.iter().map(|(k, l)| (*k, links::parse(l).unwrap())).collect();
+    nodes.push(("vmess-ws", links::parse(&format!("vmess://{}", STANDARD.encode(r#"{"v":"2","ps":"vm","add":"1.2.3.4","port":"443","id":"11111111-2222-3333-4444-555555555555","aid":"0","net":"ws","host":"h.com","path":"/ws","tls":"tls"}"#))).unwrap()));
+    nodes.push(("ss", links::parse(&format!("ss://{}@5.6.7.8:8388#ss", URL_SAFE_NO_PAD.encode("aes-256-gcm:pass"))).unwrap()));
+    nodes.push(("wg", parse::wg_parse(&awg_plain().lines().filter(|l| !l.starts_with('J')).collect::<Vec<_>>().join("\n"), None).unwrap()));
+    let xhttp = links::parse("vless://u@h:443?type=xhttp&security=tls&sni=h#x").unwrap();
+    assert!(!supports(&xhttp), "xhttp stays on Xray");
+    let mut r = RoutingSettings { preset_streaming: true, preset_block_torrents: true, ..Default::default() };
+    r.rules = vec![RouteRule { kind: "PROCESS".into(), value: "telegram.exe".into(), action: "PROXY".into(), ..Default::default() },
+                   RouteRule { kind: "PORT".into(), value: "6881-6889".into(), action: "BLOCK".into(), ..Default::default() }];
+    let s = AppSettings::default();
+    for (name, n) in &nodes {
+        assert!(supports(n), "{name}");
+        let v = build_value(n, &s, &r);
+        std::fs::write(dir.join(format!("{name}.json")), serde_json::to_string_pretty(&v).unwrap()).unwrap();
+        if *name == "wg" {
+            assert_eq!(v["endpoints"][0]["type"], "wireguard");
+        } else {
+            assert_eq!(v["outbounds"][0]["tag"], "proxy");
+        }
+        let rules = v["route"]["rules"].as_array().unwrap();
+        assert!(rules.iter().any(|x| x["process_name"][0] == "telegram.exe"));
+        assert!(rules.iter().any(|x| x["port_range"][0] == "6881:6889" && x["action"] == "reject"));
+        assert!(rules.iter().any(|x| x["protocol"][0] == "bittorrent" && x["action"] == "reject"));
+        assert_eq!(v["route"]["find_process"], true);
+        let sets: Vec<&str> = v["route"]["rule_set"].as_array().unwrap().iter().map(|x| x["tag"].as_str().unwrap()).collect();
+        assert!(sets.contains(&"geosite-netflix") && sets.contains(&"geosite-category-ads-all") && sets.contains(&"geoip-ru"));
+    }
+    let vr = build_value(&nodes[0].1, &s, &r);
+    assert_eq!(vr["outbounds"][0]["tls"]["reality"]["public_key"], "SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc");
+    assert_eq!(vr["outbounds"][0]["flow"], "xtls-rprx-vision");
+    let hy = build_value(&nodes[2].1, &s, &r);
+    assert_eq!(hy["outbounds"][0]["obfs"]["type"], "salamander");
+    let mut tun = AppSettings::default();
+    tun.connect_mode = "TUN".into();
+    let t = build_value(&nodes[0].1, &tun, &RoutingSettings::default());
+    assert_eq!(t["inbounds"][0]["type"], "tun");
+    std::fs::write(dir.join("tun.json"), serde_json::to_string_pretty(&t).unwrap()).unwrap();
 }
