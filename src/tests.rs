@@ -225,6 +225,34 @@ fn xray_config_with_balancer_kept_whole() {
     assert!(built.contains("balancers") && built.contains("socks-in") && built.contains("StatsService"));
 }
 
+#[test]
+fn direct_dns_in_any_form() {
+    for (input, host, port) in [
+        ("77.88.8.8", "77.88.8.8", None), ("77.88.8.8:53", "77.88.8.8", Some(53)),
+        ("2a02:6b8::feed:ff", "2a02:6b8::feed:ff", None), ("[2a02:6b8::feed:ff]:53", "2a02:6b8::feed:ff", Some(53)),
+        ("https://dns.yandex.ru/dns-query", "dns.yandex.ru", None), ("tcp://[2a02:6b8::feed:ff]:53", "2a02:6b8::feed:ff", Some(53)),
+        ("https://1.1.1.1:8443/dns-query?x=1", "1.1.1.1", Some(8443)), ("localhost", "localhost", None),
+    ] {
+        assert_eq!(xray::dns_endpoint(input), (host.to_string(), port), "{input}");
+        assert!(xray::valid_dns(input), "{input}");
+    }
+    for bad in ["", "   ", "https://", "1.1.1.1 8.8.8.8"] { assert!(!xray::valid_dns(bad), "{bad:?}"); }
+
+    let rule_for = |dns: &str| {
+        let s = AppSettings { direct_dns: dns.into(), ..AppSettings::default() };
+        let rules = xray::routing(&s, &RoutingSettings::default())["rules"].as_array().unwrap().clone();
+        rules.into_iter().find(|r| r["outboundTag"] == "direct" && (r.get("ip").is_some() || r.get("domain").is_some())).unwrap()
+    };
+    assert_eq!(rule_for("[2a02:6b8::feed:ff]:53")["ip"], serde_json::json!(["2a02:6b8::feed:ff"]));
+    assert_eq!(rule_for("77.88.8.8:53")["ip"], serde_json::json!(["77.88.8.8"]));
+    assert_eq!(rule_for("https://dns.yandex.ru/dns-query")["domain"], serde_json::json!(["full:dns.yandex.ru"]));
+    // nothing broken when the field is empty: no rule with an empty address
+    let s = AppSettings { direct_dns: String::new(), ..AppSettings::default() };
+    let cfg = xray::build_value(&ProxyNode::default(), &s, &RoutingSettings::default());
+    assert!(!cfg.to_string().contains("\"ip\":[\"\"]"));
+    assert!(cfg["dns"]["servers"].as_array().unwrap().iter().all(|x| x["address"] != ""));
+}
+
 /// Writes sample configs (system-proxy mode only) for `xray run -test`: target/xray-configs.
 #[test]
 fn dump_sample_configs() {
@@ -252,6 +280,11 @@ fn dump_sample_configs() {
     s.mux = true;
     for (name, n) in &nodes {
         for (rn, r) in &routings { std::fs::write(dir.join(format!("{name}-{rn}.json")), xray::build(n, &s, r)).unwrap(); }
+    }
+    for (name, dns) in [("doh-host", "https://dns.yandex.ru/dns-query"), ("ipv6-port", "[2a02:6b8::feed:ff]:53"), ("ipv6", "2a02:6b8::feed:ff"),
+                        ("ipv4-port", "77.88.8.8:53"), ("tcp-url", "tcp://77.88.8.8:53")] {
+        let st = AppSettings { direct_dns: dns.into(), remote_dns: if name == "ipv4-port" { "1.1.1.1:53".into() } else { AppSettings::default().remote_dns }, ..AppSettings::default() };
+        std::fs::write(dir.join(format!("direct-dns-{name}.json")), xray::build(&nodes[0].1, &st, &RoutingSettings::default())).unwrap();
     }
     for m in ["INCLUDE", "EXCLUDE"] {
         let mut st = AppSettings::default();
@@ -311,6 +344,36 @@ fn widgets_never_overlap() {
     for (i, a) in ws.iter().enumerate() { for b in &ws[i + 1..] {
         assert!(!(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h), "{a:?} overlaps {b:?}");
     } }
+}
+
+#[test]
+fn widgets_keep_their_minimum_and_the_grid() {
+    use crate::layout_for_tests as l;
+    let no_overlap = |ws: &Vec<HomeWidget>| for (i, a) in ws.iter().enumerate() { for b in &ws[i + 1..] {
+        assert!(!(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h), "{a:?} overlaps {b:?}");
+    } };
+    let mut ws = default_home_widgets();
+    let connect = ws.iter().find(|w| w.kind == "CONNECT").unwrap().id.clone();
+    // shrunk below what fits, dragged off the grid on both sides
+    l::place(&mut ws, &connect, Some((-5, -3)), Some((1, 1)));
+    let c = ws.iter().find(|w| w.id == connect).unwrap();
+    assert_eq!((c.x, c.y), (0, 0));
+    assert_eq!((c.w, c.h), l::min_size("CONNECT"));
+    l::place(&mut ws, &connect, Some((20, 0)), None);
+    let c = ws.iter().find(|w| w.id == connect).unwrap();
+    assert_eq!(c.x + c.w, 12, "pushed back inside the 12 columns");
+    no_overlap(&ws);
+    // removing a widget leaves no hole at the top
+    let top = ws.iter().filter(|w| w.y == 0).map(|w| w.id.clone()).collect::<Vec<_>>();
+    ws.retain(|w| !top.contains(&w.id));
+    l::compact(&mut ws);
+    assert!(ws.iter().any(|w| w.y == 0), "the rest moved up: {ws:?}");
+    no_overlap(&ws);
+    // a newly added widget is never smaller than its minimum
+    l::add(&mut ws, "MODES");
+    let m = ws.iter().find(|w| w.kind == "MODES").unwrap();
+    assert!(m.w >= l::min_size("MODES").0 && m.h >= l::min_size("MODES").1);
+    no_overlap(&ws);
 }
 
 #[test]

@@ -46,7 +46,11 @@ pub struct Core {
     stats_stop: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
     /// The engine of the running (or last started) connection.
     pub engine: Mutex<Engine>,
+    cancel: std::sync::atomic::AtomicBool,
 }
+
+/// Error text of a download the user cancelled (not shown as a failure).
+pub const CANCELLED: &str = "cancelled";
 
 pub fn xray_exe() -> PathBuf { core_dir().join("xray.exe") }
 fn pid_file() -> PathBuf { home().join("xray.pid") }
@@ -58,7 +62,7 @@ pub fn http_agent() -> ureq::Agent {
 impl Core {
     pub fn new() -> Arc<Self> {
         let c = Arc::new(Self { child: Mutex::new(None), logs: Mutex::new(vec![]), traffic: Arc::new(Mutex::new(Traffic::default())),
-            status: Mutex::new(Status::Stopped), stats_stop: Mutex::new(None), engine: Mutex::new(Engine::Xray) });
+            status: Mutex::new(Status::Stopped), stats_stop: Mutex::new(None), engine: Mutex::new(Engine::Xray), cancel: Default::default() });
         c.kill_orphan();
         c
     }
@@ -79,13 +83,22 @@ impl Core {
     pub fn has_core(&self) -> bool { xray_exe().exists() }
     pub fn is_running(&self) -> bool { matches!(self.status(), Status::Running(_)) }
 
+    /// Stops a running download (the user pressed the button again while the core was being fetched).
+    pub fn cancel_download(&self) { self.cancel.store(true, std::sync::atomic::Ordering::Relaxed); }
+
     pub(crate) fn download(&self, url: &str, label: &str) -> anyhow::Result<Vec<u8>> {
-        let resp = http_agent().get(url).call()?;
+        use std::sync::atomic::Ordering::Relaxed;
+        self.cancel.store(false, Relaxed);
+        // a 30 MB core over a slow line takes minutes: limit the wait for the server, not the whole transfer
+        let agent: ureq::Agent = ureq::Agent::config_builder().timeout_connect(Some(Duration::from_secs(20)))
+            .timeout_recv_response(Some(Duration::from_secs(30))).timeout_global(Some(Duration::from_secs(20 * 60))).user_agent("Uplinx").build().into();
+        let resp = agent.get(url).call()?;
         let total: Option<u64> = resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
         let mut reader = resp.into_body().into_reader();
         let mut buf = vec![0u8; 64 * 1024];
         let mut out = Vec::with_capacity(total.unwrap_or(1 << 20) as usize);
         loop {
+            anyhow::ensure!(!self.cancel.load(Relaxed), CANCELLED);
             let n = reader.read(&mut buf)?;
             if n == 0 { break; }
             out.extend_from_slice(&buf[..n]);

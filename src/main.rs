@@ -160,6 +160,12 @@ impl Shell {
         }
     }
 
+    /// Redraw now instead of on the next tick (the UI is waiting for the result of its own action).
+    fn redraw(&self) {
+        self.view.borrow_mut().refresh(&self.w, &self.app);
+        self.last_rev.set(self.app.rev.load(Relaxed));
+    }
+
     fn set_msg(&self, m: Option<&app::Msg>) {
         let ui = self.w.global::<Ui>();
         ui.set_message(m.map(|m| m.text.clone()).unwrap_or_default().into());
@@ -281,7 +287,7 @@ fn main() -> anyhow::Result<()> {
         timer.start(slint::TimerMode::Repeated, Duration::from_millis(200), move || { if let Some(s) = s.upgrade() { s.tick(); } });
     }
 
-    if let Some(p) = args.iter().find_map(|a| a.strip_prefix("--page=")).and_then(|p| p.parse().ok()) { w.global::<Nav>().set_page(p); }
+    if let Some(p) = args.iter().find_map(|a| a.strip_prefix("--page=")).and_then(|p| p.parse::<i32>().ok()) { w.global::<Nav>().set_page(p.clamp(0, 5)); }
     // for screenshots of dialogs: --dialog=<name>[:<argument>]
     if let Some(d) = args.iter().find_map(|a| a.strip_prefix("--dialog=")) {
         let (name, arg) = d.split_once(':').unwrap_or((d, ""));
@@ -500,18 +506,30 @@ fn wire(sh: &Rc<Shell>) {
         }
         if key.as_str() == "theme-mode" || key.as_str() == "color-source" { let st = s.app.settings(); theme::apply(&s.w, &s.mini, &st); }
     });
+    // returns false when the value is rejected: the field then shows the stored value again
     on!(on_set_text, |s, key, v| {
         let v = v.trim().to_string();
+        let reject = |msg: String| { s.app.notify(msg, None); false };
         match key.as_str() {
             "socks-port" | "http-port" => match v.parse::<u16>() {
-                Ok(p) if p > 0 => s.app.update_settings(|x| if key.as_str() == "socks-port" { x.socks_port = p } else { x.http_port = p }),
-                _ => s.app.notify(t!("Ports must be numbers from 1 to 65535"), None),
+                Ok(p) if p > 0 => {
+                    let st = s.app.settings();
+                    let other = if key.as_str() == "socks-port" { st.http_port } else { st.socks_port };
+                    if p == other || p == st.api_port { return reject(t!("This port is already used by another Uplinx port")); }
+                    s.app.update_settings(|x| if key.as_str() == "socks-port" { x.socks_port = p } else { x.http_port = p });
+                    true
+                }
+                _ => reject(t!("Ports must be numbers from 1 to 65535")),
             },
-            "remote-dns" => s.app.update_settings(|x| x.remote_dns = v),
-            "direct-dns" => s.app.update_settings(|x| x.direct_dns = v),
-            "ping-url" => s.app.update_settings(|x| x.ping_url = v),
-            "user-agent" => s.app.update_settings(|x| x.user_agent = v),
-            _ => {}
+            "remote-dns" | "direct-dns" if !core::xray::valid_dns(&v) =>
+                reject(t!("Enter a DNS server: an IP address (77.88.8.8, [2a02:6b8::feed:ff]:53) or a URL (https://dns.example/dns-query)")),
+            "remote-dns" => { s.app.update_settings(|x| x.remote_dns = v); true }
+            "direct-dns" => { s.app.update_settings(|x| x.direct_dns = v); true }
+            "ping-url" if !(v.starts_with("http://") || v.starts_with("https://")) || v.contains(char::is_whitespace) =>
+                reject(t!("The ping URL must start with http:// or https://")),
+            "ping-url" => { s.app.update_settings(|x| x.ping_url = v); true }
+            "user-agent" => { s.app.update_settings(|x| x.user_agent = v); true }
+            _ => false,
         }
     });
     on!(on_set_seed, |s, c| {
@@ -540,11 +558,22 @@ fn wire(sh: &Rc<Shell>) {
     on!(on_set_log_filter, |s, i| { s.view.borrow_mut().log_filter = i; s.app.bump(); });
 
     // ---- home widgets
-    on!(on_widget_move, |s, id, x, y| s.app.edit(|st| layout::place(&mut st.settings.home_widgets, &id, Some((x, y)), None)));
-    on!(on_widget_resize, |s, id, w, h| s.app.edit(|st| layout::place(&mut st.settings.home_widgets, &id, None, Some((w, h)))));
-    on!(on_widget_add, |s, kind| s.app.edit(|st| layout::add(&mut st.settings.home_widgets, &kind)));
-    on!(on_widget_remove, |s, id| s.app.edit(|st| st.settings.home_widgets.retain(|w| w.id != id.as_str())));
-    on!(on_widgets_reset, |s| s.app.edit(|st| st.settings.home_widgets = model::default_home_widgets()));
+    // the grid is redrawn right away (not on the next tick): a dropped tile springs straight into its new cell
+    on!(on_widget_move, |s, id, x, y| { s.app.edit(|st| layout::place(&mut st.settings.home_widgets, &id, Some((x, y)), None)); s.redraw(); });
+    on!(on_widget_resize, |s, id, w, h| { s.app.edit(|st| layout::place(&mut st.settings.home_widgets, &id, None, Some((w, h)))); s.redraw(); });
+    on!(on_widget_add, |s, kind| { s.app.edit(|st| layout::add(&mut st.settings.home_widgets, &kind)); s.redraw(); });
+    on!(on_widget_remove, |s, id| {
+        let before = s.app.settings().home_widgets;
+        s.app.edit(|st| { st.settings.home_widgets.retain(|w| w.id != id.as_str()); layout::compact(&mut st.settings.home_widgets); });
+        s.app.notify(t!("Widget removed"), Some((t!("Undo"), Action::RestoreWidgets(before))));
+        s.redraw();
+    });
+    on!(on_widgets_reset, |s| {
+        let before = s.app.settings().home_widgets;
+        s.app.edit(|st| st.settings.home_widgets = model::default_home_widgets());
+        s.app.notify(t!("Layout reset"), Some((t!("Undo"), Action::RestoreWidgets(before))));
+        s.redraw();
+    });
     on!(on_refresh_ip, |s| { let a = s.app.clone(); std::thread::spawn(move || a.refresh_ip()); });
     on!(on_check_sites, |s| s.app.check_sites());
     on!(on_set_sites, |s, text| { s.app.set_sites(text.lines().map(str::to_string).collect()); s.app.check_sites(); });
@@ -597,7 +626,33 @@ mod layout {
 
     fn overlap(a: &HomeWidget, b: &HomeWidget) -> bool { a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h }
 
+    /// The smallest size (columns, rows) at which a widget's content still fits.
+    pub fn min_size(kind: &str) -> (i32, i32) {
+        match kind {
+            "CONNECT" => (3, 4),
+            "MODES" => (4, 2),
+            "SERVERS" | "SITES" | "USAGE" | "SPEEDTEST" | "SPEEDOMETER" => (3, 3),
+            "SERVER" | "SPEED" | "QUOTA" => (3, 2),
+            _ => (2, 2),
+        }
+    }
+
+    /// Keeps every widget inside the grid and at least its minimum size (also repairs older saved layouts).
+    fn fit(w: &mut HomeWidget) {
+        let (mw, mh) = min_size(&w.kind);
+        w.w = w.w.clamp(mw, 12);
+        w.h = w.h.clamp(mh, 10);
+        w.x = w.x.clamp(0, 12 - w.w);
+        w.y = w.y.max(0);
+    }
+
+    /// Closes the holes a removed widget leaves.
+    pub fn compact(ws: &mut Vec<HomeWidget>) {
+        if let Some(first) = ws.first().map(|w| w.id.clone()) { settle(ws, &first); }
+    }
+
     fn settle(ws: &mut Vec<HomeWidget>, fixed: &str) {
+        for w in ws.iter_mut() { fit(w); }
         // the moved widget keeps its place; others are pushed down in reading order
         ws.sort_by_key(|w| (w.id != fixed, w.y, w.x));
         for i in 1..ws.len() {
@@ -621,14 +676,16 @@ mod layout {
 
     pub fn place(ws: &mut Vec<HomeWidget>, id: &str, pos: Option<(i32, i32)>, size: Option<(i32, i32)>) {
         let Some(w) = ws.iter_mut().find(|w| w.id == id) else { return };
-        if let Some((w2, h2)) = size { w.w = w2.clamp(2, 12); w.h = h2.clamp(2, 10); }
-        if let Some((x, y)) = pos { w.x = x; w.y = y.max(0); }
-        w.x = w.x.clamp(0, 12 - w.w);
+        if let Some((w2, h2)) = size { w.w = w2; w.h = h2; }
+        if let Some((x, y)) = pos { w.x = x; w.y = y; }
+        fit(w);
         settle(ws, id);
     }
 
     pub fn add(ws: &mut Vec<HomeWidget>, kind: &str) {
-        let (w, h) = match kind { "CONNECT" => (6, 6), "SERVERS" | "SITES" | "USAGE" | "SPEEDTEST" => (4, 4), "MODES" => (6, 2), "SPEED" => (5, 3), _ => (3, 2) };
+        let (w, h) = match kind { "CONNECT" => (6, 6), "SERVERS" | "SITES" | "USAGE" | "SPEEDTEST" | "SPEEDOMETER" => (4, 4), "MODES" => (6, 2), "SPEED" => (5, 3), _ => (3, 2) };
+        let (mw, mh) = min_size(kind);
+        let (w, h) = (w.max(mw), h.max(mh));
         let bottom = ws.iter().map(|x| x.y + x.h).max().unwrap_or(0);
         let nw = HomeWidget { kind: kind.into(), x: 0, y: bottom, w, h, ..Default::default() };
         let id = nw.id.clone();

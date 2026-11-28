@@ -45,7 +45,7 @@ export struct RuleItem { id: string, kind: string, value: string, action: string
 export struct AppItem { name: string, icon: image, has-icon: bool }
 export struct LogItem { time: string, level: string, text: string }
 export struct SiteItem { site: string, ms: int, code: int, checked: bool }
-export struct WidgetItem { id: string, kind: string, x: int, y: int, w: int, h: int }
+export struct WidgetItem { id: string, kind: string, x: int, y: int, w: int, h: int, min-w: int, min-h: int }
 export struct FieldItem { key: string, label: string, value: string }
 export struct Bar { value: float, label: string }
 export struct SpeedRow { name: string, down: string, up: string, ping: string, when: string }
@@ -283,7 +283,7 @@ export global Logic {
     // settings
     callback set-bool(string, bool);
     callback set-int(string, int);
-    callback set-text(string, string);
+    callback set-text(string, string) -> bool; // false: the value was rejected (the field shows the stored one again)
     callback set-seed(color);
     callback update-core();
     callback update-singbox();

@@ -12,7 +12,14 @@ use std::time::{Duration, Instant};
 pub const PING_TESTING: i32 = -2;
 
 #[derive(Clone, Debug)]
-pub enum Action { Undo(Box<AppState>), Reconnect, ErrorDetails, RestartUpdate, UndoRouting(Box<RoutingSettings>), Disconnect }
+pub enum Action {
+    Reconnect, ErrorDetails, RestartUpdate, UndoRouting(Box<RoutingSettings>), Disconnect,
+    // undo restores only what was removed: everything else changed in the meantime stays
+    RestoreNode(Box<ProxyNode>, usize),
+    Unhide(String),
+    RestoreSubscription(Box<Subscription>, Vec<(usize, ProxyNode)>),
+    RestoreWidgets(Vec<HomeWidget>),
+}
 
 #[derive(Clone, Debug)]
 pub struct Msg { pub text: String, pub action: Option<(String, Action)> }
@@ -276,7 +283,13 @@ impl App {
         match self.status() {
             Status::Running(_) => self.disconnect(),
             Status::Stopped | Status::Failed(_) => if self.running_sig.lock().unwrap().is_some() { self.disconnect() } else { self.connect() },
-            _ => {}
+            // the core is still downloading: a second press cancels instead of doing nothing
+            Status::Preparing(..) => {
+                self.want_connected.store(false, Relaxed);
+                self.core.cancel_download();
+                self.notify(t!("Connection cancelled"), None);
+            }
+            Status::Starting => {}
         }
     }
 
@@ -346,7 +359,8 @@ impl App {
                 // kill switch: while retrying, the proxy keeps pointing at the dead core so nothing goes around the VPN
                 if !(retry && st.settings.kill_switch && !tun) { sysproxy::restore(); }
                 self.core.stop();
-                if retry { self.core.log('E', &e.to_string()); } else { self.fail(&e.to_string()); }
+                if e.to_string() == core::CANCELLED { self.core.log('I', t!("Connection cancelled")); }
+                else if retry { self.core.log('E', &e.to_string()); } else { self.fail(&e.to_string()); }
             }
         }
         if tun && self.is_connected() { *self.tun_iface.lock().unwrap() = probe::physical_interface_fresh(); }
@@ -445,7 +459,14 @@ impl App {
 
     pub fn run_action(self: &Arc<Self>, a: Action) {
         match a {
-            Action::Undo(s) => { self.edit(|st| *st = *s); }
+            Action::RestoreNode(n, at) => self.edit(|st| if !st.nodes.iter().any(|x| x.id == n.id) { let at = at.min(st.nodes.len()); st.nodes.insert(at, *n); }),
+            Action::Unhide(key) => self.edit(|st| st.hidden.retain(|x| *x != key)),
+            Action::RestoreSubscription(sub, nodes) => self.edit(|st| {
+                if st.subscriptions.iter().any(|x| x.id == sub.id) { return; }
+                st.subscriptions.push(*sub);
+                for (at, n) in nodes { let at = at.min(st.nodes.len()); st.nodes.insert(at, n); }
+            }),
+            Action::RestoreWidgets(w) => self.edit(|st| st.settings.home_widgets = w),
             Action::UndoRouting(r) => self.update_routing(|x| *x = *r),
             Action::Reconnect => self.reconnect(),
             Action::ErrorDetails => { self.flags.show_error.store(true, Relaxed); self.bump(); }
@@ -497,17 +518,17 @@ impl App {
 
     pub fn delete_node(&self, id: &str) {
         let before = self.snapshot();
-        let Some(n) = before.nodes.iter().find(|n| n.id == id).cloned() else { return };
+        let Some(at) = before.nodes.iter().position(|n| n.id == id) else { return };
+        let n = before.nodes[at].clone();
         self.edit(|s| s.nodes.retain(|x| x.id != id));
-        self.notify(t!("“%1” deleted", n.name), Some((t!("Undo"), Action::Undo(Box::new(before)))));
+        self.notify(t!("“%1” deleted", n.name), Some((t!("Undo"), Action::RestoreNode(Box::new(n), at))));
     }
 
     pub fn set_hidden(&self, id: &str, hidden: bool) {
         let Some(n) = self.snapshot().nodes.into_iter().find(|n| n.id == id) else { return };
         let key = n.identity();
-        let before = self.snapshot();
         self.edit(|s| { s.hidden.retain(|x| *x != key); if hidden { s.hidden.push(key.clone()); } });
-        if hidden { self.notify(t!("“%1” hidden", n.name), Some((t!("Undo"), Action::Undo(Box::new(before))))); }
+        if hidden { self.notify(t!("“%1” hidden", n.name), Some((t!("Undo"), Action::Unhide(key)))); }
     }
 
     pub fn copy_link(&self, id: &str) {
@@ -540,8 +561,18 @@ impl App {
         self.apply_import(parse::import(t, name_hint))
     }
 
-    fn apply_import(self: &Arc<Self>, r: parse::ImportResult) -> usize {
+    fn apply_import(self: &Arc<Self>, mut r: parse::ImportResult) -> usize {
         let mut count = 0;
+        // the same link pasted again must not make a second copy of the server
+        let known: HashSet<String> = self.snapshot().nodes.iter().filter(|n| n.subscription_id.is_none()).map(|n| n.identity()).collect();
+        let before = r.nodes.len();
+        let mut seen = HashSet::new();
+        r.nodes.retain(|n| { let k = n.identity(); !known.contains(&k) && seen.insert(k) });
+        let dupes = before - r.nodes.len();
+        if dupes > 0 && r.nodes.is_empty() && r.nested.is_empty() && r.rules.is_empty() && r.routing_profile.is_none() {
+            self.notify(if dupes == 1 { t!("This server is already added") } else { t!("These servers are already added") }, None);
+            return dupes;
+        }
         if !r.nodes.is_empty() {
             let first = r.nodes[0].id.clone();
             let n = r.nodes.len();
@@ -874,8 +905,10 @@ impl App {
     pub fn delete_subscription(&self, id: &str) {
         let before = self.snapshot();
         let Some(sub) = before.subscriptions.iter().find(|s| s.id == id).cloned() else { return };
+        let nodes: Vec<(usize, ProxyNode)> = before.nodes.iter().enumerate().filter(|(_, n)| n.subscription_id.as_deref() == Some(id)).map(|(i, n)| (i, n.clone())).collect();
         self.edit(|s| { s.subscriptions.retain(|x| x.id != id); s.nodes.retain(|n| n.subscription_id.as_deref() != Some(id)); });
-        self.notify(t!("Subscription “%1” deleted", sub.name), Some((t!("Undo"), Action::Undo(Box::new(before)))));
+        let name = sub.name.clone();
+        self.notify(t!("Subscription “%1” deleted", name), Some((t!("Undo"), Action::RestoreSubscription(Box::new(sub), nodes))));
     }
 
     pub fn update_all_subscriptions(self: &Arc<Self>) { for s in self.snapshot().subscriptions { self.update_subscription(&s.id); } }

@@ -33,14 +33,23 @@ export global Theme {
     in property <bool> motion: false;
 }
 
-/** One scale for the whole app (M3 Expressive): corners and spacing. */
+/**
+ * One scale for the whole app (M3 Expressive): corners, spacing, sizes and motion.
+ * Nothing else in the UI uses raw numbers for these.
+ *
+ * Easing curves (Slint can't store an easing in a property, so they are written out where used):
+ *   spring-fast    cubic-bezier(0.42, 1.67, 0.21, 0.90)  small things that bounce: presses, thumbs, chips, indicators
+ *   spring         cubic-bezier(0.38, 1.21, 0.22, 1.00)  larger moves: tiles, dialogs, shapes
+ *   emphasized     cubic-bezier(0.05, 0.70, 0.10, 1.00)  things entering the screen
+ *   standard       cubic-bezier(0.20, 0.00, 0.00, 1.00)  colours, opacity, values
+ */
 export global Ds {
     // corners
-    out property <length> r-xs: 8px;    // chips, tags
+    out property <length> r-xs: 8px;    // chips, tags, tooltips
     out property <length> r-s: 12px;    // inputs, menu items, snackbar, small surfaces inside cards
     out property <length> r-m: 16px;    // list items, popups, banners, logo container
-    out property <length> r-l: 24px;    // cards, widgets, sections
-    out property <length> r-xl: 28px;   // dialogs
+    out property <length> r-l: 24px;    // cards, widgets, sections, selected list items
+    out property <length> r-xl: 28px;   // dialogs, full-screen surfaces
     // spacing
     out property <length> s1: 4px;
     out property <length> s2: 8px;
@@ -51,6 +60,16 @@ export global Ds {
     out property <length> card: 16px;   // padding inside cards and widgets
     out property <length> list-gap: 4px; // between items of one list
     out property <length> card-gap: 12px; // between cards
+    // sizes
+    out property <length> control: 40px;   // buttons, segmented, search fields
+    out property <length> chip: 32px;
+    out property <length> tag: 28px;       // ping, speed and action tags
+    out property <length> mini-icon: 32px; // icon buttons inside widgets
+    // motion
+    out property <duration> t-fast: 150ms;   // colour and opacity
+    out property <duration> t-med: 300ms;    // small movements, presses
+    out property <duration> t-slow: 450ms;   // tiles, shapes, dialogs, pages
+    out property <float> press: 0.94;        // how far a pressed control shrinks
 }
 
 /** The Uplinx mark: a flat, symmetric lowercase u — the same geometry as the app icon, in the theme's colours. */
@@ -75,6 +94,40 @@ export component Icon inherits Text {
     color: Theme.on-surface;
     horizontal-alignment: center;
     vertical-alignment: center;
+    animate color { duration: Ds.t-fast; }
+}
+
+/** Pop-up surface (menus, tooltips): grows out of its anchor with a small spring. */
+export component Surface inherits Rectangle {
+    in property <length> radius: Ds.r-m;
+    property <float> t: 0;
+    init => { root.t = 1; }
+    animate t { duration: Theme.motion ? Ds.t-med : 0ms; easing: cubic-bezier(0.05, 0.70, 0.10, 1.00); }
+    opacity: root.t;
+    transform-scale: 0.9 + 0.1 * root.t;
+    border-radius: root.radius;
+    background: Theme.surface-container-highest;
+    drop-shadow-blur: 16px;
+    drop-shadow-color: #00000050;
+}
+
+/** A menu row inside a Surface. */
+export component MenuItem inherits Rectangle {
+    in property <string> glyph;
+    in property <string> text;
+    in property <bool> danger;
+    in property <color> glyph-color: Theme.on-surface-variant;
+    callback clicked;
+    height: Ds.control;
+    border-radius: Ds.r-s;
+    background: ta.pressed ? Theme.on-surface.with-alpha(0.12) : (ta.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent);
+    animate background { duration: Ds.t-fast; }
+    HorizontalLayout {
+        padding-left: Ds.s3; padding-right: Ds.s3; spacing: Ds.s3;
+        Icon { glyph: root.glyph; font-size: 18px; color: root.danger ? Theme.error : root.glyph-color; width: 20px; }
+        Text { text: root.text; font-size: 14px; color: root.danger ? Theme.error : Theme.on-surface; vertical-alignment: center; overflow: elide; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
 
 export component IconButton inherits Rectangle {
@@ -84,12 +137,22 @@ export component IconButton inherits Rectangle {
     in property <color> tint: filled ? Theme.on-primary : Theme.on-surface-variant;
     in property <string> tooltip;
     callback clicked;
-    width: 40px; height: 40px;
+    width: Ds.control; height: Ds.control;
     border-radius: self.height / 2;
-    background: filled ? Theme.primary : (ta.has-hover && enabled ? Theme.on-surface.with-alpha(0.08) : transparent);
+    background: filled ? Theme.primary : transparent;
     opacity: enabled ? 1 : 0.38;
-    animate background { duration: 150ms; }
-    Icon { glyph: root.glyph; color: root.tint; font-size: 20px; }
+    animate opacity { duration: Ds.t-fast; }
+    // state layer: hover 8 %, press 12 %
+    Rectangle {
+        border-radius: parent.border-radius;
+        background: (root.filled ? Theme.on-primary : Theme.on-surface).with-alpha(!root.enabled ? 0 : (ta.pressed ? 0.12 : (ta.has-hover ? 0.08 : 0)));
+        animate background { duration: Ds.t-fast; }
+    }
+    Icon {
+        glyph: root.glyph; color: root.tint; font-size: root.height <= 32px ? 18px : 20px;
+    }
+    transform-scale: ta.pressed ? 0.86 : 1;
+    animate transform-scale { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
     ta := TouchArea {
         enabled: root.enabled; mouse-cursor: pointer;
         clicked => { tip.close(); root.tip-open = false; root.clicked(); }
@@ -102,8 +165,8 @@ export component IconButton inherits Rectangle {
         x: (root.width - self.width) / 2; y: root.height + Ds.s1;
         width: tt.preferred-width + 2 * Ds.s2; height: 28px;
         close-policy: no-auto-close;
-        Rectangle {
-            border-radius: Ds.r-xs; background: Theme.inverse-surface;
+        Surface {
+            radius: Ds.r-xs; background: Theme.inverse-surface; drop-shadow-blur: 0;
             tt := Text { text: root.tooltip; font-size: 12px; color: Theme.inverse-on-surface; }
         }
     }
@@ -117,22 +180,31 @@ export component Button inherits Rectangle {
     in property <bool> enabled: true;
     callback clicked;
     property <color> fg: kind == 0 ? Theme.on-primary : (kind == 1 ? Theme.on-secondary-container : (kind == 4 ? Theme.on-error-container : Theme.primary));
-    height: 40px;
+    height: Ds.control;
     min-width: lay.preferred-width;
-    border-radius: ta.pressed ? Ds.r-s : self.height / 2;
-    animate border-radius { duration: 160ms; easing: ease-out; }
+    // M3 Expressive: the pill squares off while pressed and springs back
+    border-radius: ta.pressed && enabled ? Ds.r-s : self.height / 2;
+    animate border-radius { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
     background: kind == 0 ? Theme.primary : (kind == 1 ? Theme.secondary-container : (kind == 4 ? Theme.error-container : transparent));
+    animate background { duration: Ds.t-fast; }
     border-width: kind == 2 ? 1px : 0;
     border-color: Theme.outline-variant;
     opacity: enabled ? 1 : 0.38;
-    Rectangle { border-radius: parent.border-radius; background: ta.has-hover && root.enabled ? root.fg.with-alpha(0.08) : transparent; }
+    animate opacity { duration: Ds.t-fast; }
+    transform-scale: ta.pressed && enabled ? 0.96 : 1;
+    animate transform-scale { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
+    Rectangle {
+        border-radius: parent.border-radius;
+        background: root.fg.with-alpha(!root.enabled ? 0 : (ta.pressed ? 0.12 : (ta.has-hover ? 0.08 : 0)));
+        animate background { duration: Ds.t-fast; }
+    }
     lay := HorizontalLayout {
-        padding-left: root.glyph != "" ? 16px : 24px;
-        padding-right: 24px;
-        spacing: 8px;
+        padding-left: root.glyph != "" ? Ds.s4 : Ds.s5;
+        padding-right: Ds.s5;
+        spacing: Ds.s2;
         alignment: center;
         if root.glyph != "": Icon { glyph: root.glyph; color: root.fg; font-size: 18px; }
-        Text { text: root.text; color: root.fg; font-size: 14px; font-weight: 600; vertical-alignment: center; }
+        Text { text: root.text; color: root.fg; font-size: 14px; font-weight: 600; vertical-alignment: center; animate color { duration: Ds.t-fast; } }
     }
     ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
@@ -142,79 +214,108 @@ export component Chip inherits Rectangle {
     in property <string> glyph;
     in property <bool> selected;
     callback clicked;
-    height: 32px;
+    height: Ds.chip;
     min-width: lay.preferred-width;
-    border-radius: Ds.r-xs;
-    background: selected ? Theme.secondary-container : (ta.has-hover ? Theme.on-surface.with-alpha(0.06) : transparent);
+    border-radius: selected ? Ds.r-s : Ds.r-xs;
+    animate border-radius { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
+    background: selected ? Theme.secondary-container : Theme.on-surface.with-alpha(ta.pressed ? 0.12 : (ta.has-hover ? 0.06 : 0));
+    animate background { duration: Ds.t-fast; }
     border-width: selected ? 0 : 1px;
     border-color: Theme.outline-variant;
-    animate background { duration: 150ms; }
+    transform-scale: ta.pressed ? Ds.press : 1;
+    animate transform-scale { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
     lay := HorizontalLayout {
-        padding-left: 12px; padding-right: 16px; spacing: 8px;
+        padding-left: Ds.s3; padding-right: Ds.s4; spacing: Ds.s2;
         if root.selected || root.glyph != "": Icon { glyph: root.selected ? "\u{e5ca}" : root.glyph; font-size: 16px; color: root.selected ? Theme.on-secondary-container : Theme.on-surface-variant; }
-        Text { text: root.text; font-size: 13px; font-weight: 500; vertical-alignment: center; color: root.selected ? Theme.on-secondary-container : Theme.on-surface-variant; }
+        Text { text: root.text; font-size: 13px; font-weight: 500; vertical-alignment: center; color: root.selected ? Theme.on-secondary-container : Theme.on-surface-variant; animate color { duration: Ds.t-fast; } }
     }
     ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
 
-/** Connected button group (M3 Expressive): the selected segment grows rounder. */
+/** Connected button group (M3 Expressive): the selected segment grows rounder; a pressed one squeezes. */
 export component Segmented inherits HorizontalLayout {
     in property <[string]> options;
     in property <int> index;
     callback picked(int);
     spacing: 2px;
     for o[i] in options: Rectangle {
-        height: 40px;
+        height: Ds.control;
         horizontal-stretch: 1;
-        min-width: t.preferred-width + 24px;
+        min-width: t.preferred-width + 2 * Ds.s3;
         property <bool> sel: i == root.index;
-        border-top-left-radius: sel || i == 0 ? self.height / 2 : Ds.r-xs;
+        property <length> round: self.height / 2;
+        border-top-left-radius: ta.pressed ? Ds.r-xs : (sel || i == 0 ? round : Ds.r-xs);
         border-bottom-left-radius: self.border-top-left-radius;
-        border-top-right-radius: sel || i == root.options.length - 1 ? self.height / 2 : Ds.r-xs;
+        border-top-right-radius: ta.pressed ? Ds.r-xs : (sel || i == root.options.length - 1 ? round : Ds.r-xs);
         border-bottom-right-radius: self.border-top-right-radius;
-        background: sel ? Theme.primary : (ta.has-hover ? Theme.surface-container-highest : Theme.surface-container-high);
-        animate background { duration: 180ms; }
-        t := Text { text: o; font-size: 13px; font-weight: 600; color: sel ? Theme.on-primary : Theme.on-surface-variant; overflow: elide; }
+        animate border-top-left-radius, border-bottom-left-radius, border-top-right-radius, border-bottom-right-radius {
+            duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90);
+        }
+        background: sel ? Theme.primary : (ta.pressed ? Theme.surface-container-highest.darker(0.05) : (ta.has-hover ? Theme.surface-container-highest : Theme.surface-container-high));
+        animate background { duration: Ds.t-fast; }
+        t := Text { text: o; font-size: 13px; font-weight: 600; color: sel ? Theme.on-primary : Theme.on-surface-variant; overflow: elide; animate color { duration: Ds.t-fast; } }
         ta := TouchArea { mouse-cursor: pointer; clicked => { root.picked(i); } }
     }
 }
 
+/**
+ * M3 switch. `checked` always comes from the model: a click shows the new state at once and sends `toggled`;
+ * if the model doesn't follow (rejected), the switch falls back to it.
+ */
 export component Switch inherits Rectangle {
-    in-out property <bool> checked;
+    in property <bool> checked;
     in property <bool> enabled: true;
     callback toggled(bool);
+    property <bool> wish;
+    property <bool> pending;
+    property <bool> on: pending ? wish : checked;
+    changed checked => { root.pending = false; }
+    Timer { interval: 800ms; running: root.pending; triggered => { root.pending = false; } }
     width: 52px; height: 32px;
-    border-radius: 16px;
-    background: checked ? Theme.primary : Theme.surface-container-highest;
-    border-width: checked ? 0 : 2px;
+    border-radius: self.height / 2;
+    background: on ? Theme.primary : Theme.surface-container-highest;
+    animate background { duration: Ds.t-fast; }
+    border-width: on ? 0 : 2px;
     border-color: Theme.outline;
     opacity: enabled ? 1 : 0.38;
-    animate background { duration: 150ms; }
     thumb := Rectangle {
-        width: root.checked ? 24px : (ta.pressed ? 28px : 16px);
+        width: ta.pressed ? 28px : (root.on ? 24px : 16px);
         height: self.width;
         border-radius: self.width / 2;
-        x: root.checked ? root.width - self.width - 4px : (root.height - self.height) / 2 + 2px;
+        x: root.on ? root.width - self.width - (root.height - self.height) / 2 : (root.height - self.height) / 2;
         y: (root.height - self.height) / 2;
-        background: root.checked ? Theme.on-primary : Theme.outline;
-        animate x, width { duration: 200ms; easing: ease-out-back; }
-        if root.checked: Icon { glyph: "\u{e5ca}"; font-size: 14px; color: Theme.primary; }
+        background: root.on ? Theme.on-primary : Theme.outline;
+        animate x, width { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
+        animate background { duration: Ds.t-fast; }
+        if root.on: Icon { glyph: "\u{e5ca}"; font-size: 14px; color: Theme.primary; }
     }
-    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.checked = !root.checked; root.toggled(root.checked); } }
+    ta := TouchArea {
+        enabled: root.enabled; mouse-cursor: pointer;
+        clicked => { root.wish = !root.on; root.pending = true; root.toggled(root.wish); }
+    }
 }
 
 export component Card inherits Rectangle {
     in property <bool> high;
     border-radius: Ds.r-l;
     background: high ? Theme.surface-container-high : Theme.surface-container;
+    animate background { duration: Ds.t-fast; }
 }
 
 export component Title inherits Text {
-    min-height: 40px; // same baseline on every screen, with or without buttons beside it
+    min-height: Ds.control; // same baseline on every screen, with or without buttons beside it
     font-family: "Unbounded";
     font-weight: 600;
     font-size: 22px;
     color: Theme.on-surface;
+    vertical-alignment: center;
+}
+
+/** Section heading inside a page ("Rules", "Ready-made rules"). */
+export component Heading inherits Text {
+    font-size: 14px;
+    font-weight: 700;
+    color: Theme.primary;
     vertical-alignment: center;
 }
 
@@ -224,6 +325,20 @@ export component Label inherits Text {
     color: muted ? Theme.on-surface-variant : Theme.on-surface;
     vertical-alignment: center;
     overflow: elide;
+}
+
+/** A coloured pill with a short word: route actions, ping, speed, warnings. */
+export component Tag inherits Rectangle {
+    in property <string> text;
+    in property <color> fg: Theme.on-primary-container;
+    in property <brush> bg: Theme.primary-container;
+    in property <length> min-w: 0;
+    height: Ds.tag;
+    width: max(root.min-w, tx.preferred-width + 2 * Ds.s3);
+    border-radius: self.height / 2;
+    background: root.bg;
+    animate background { duration: Ds.t-fast; }
+    tx := Text { text: root.text; font-size: 12px; font-weight: 600; color: root.fg; animate color { duration: Ds.t-fast; } }
 }
 
 /** A settings row: title, optional subtitle, and a trailing control. */
@@ -248,7 +363,7 @@ export component Shape inherits Path {
     commands: shape;
 }
 
-/** Server avatar: the flag sticker inside a shape that blooms when selected. */
+/** Server avatar: the flag sticker inside a shape that blooms (turns and pops) when selected. */
 export component Avatar inherits Rectangle {
     in property <image> flag;
     in property <bool> has-flag;
@@ -256,16 +371,22 @@ export component Avatar inherits Rectangle {
     in property <string> glyph: "\u{e80b}";
     in property <length> size: 44px;
     width: size; height: size;
-    Shape {
-        width: 100%; height: 100%;
-        shape: root.selected ? Shapes.cookie12 : Shapes.circle;
-        fill: root.selected ? Theme.primary-container : Theme.surface-container-highest;
+    Rectangle {
+        transform-rotation: root.selected ? 0deg : -40deg;
+        transform-scale: root.selected ? 1 : 0.9;
+        animate transform-rotation, transform-scale { duration: Ds.t-slow; easing: cubic-bezier(0.38, 1.21, 0.22, 1.00); }
+        Shape {
+            width: 100%; height: 100%;
+            shape: root.selected ? Shapes.cookie12 : Shapes.circle;
+            fill: root.selected ? Theme.primary-container : Theme.surface-container-highest;
+            animate fill { duration: Ds.t-fast; }
+        }
     }
     if root.has-flag: Image { source: root.flag; width: root.size * 0.6; height: self.width; image-rendering: smooth; }
     if !root.has-flag: Icon { glyph: root.glyph; font-size: root.size * 0.5; color: root.selected ? Theme.on-primary-container : Theme.on-surface-variant; }
 }
 
-/** Single-line input in M3 "filled" style. */
+/** Single-line input in M3 "filled" style: the label rests inside and floats up on focus. */
 export component Field inherits Rectangle {
     in property <string> label;
     in-out property <string> text;
@@ -273,14 +394,28 @@ export component Field inherits Rectangle {
     in property <InputType> input-type: InputType.text;
     callback edited(string);
     callback accepted(string);
+    property <bool> up: input.has-focus || root.text != "" || root.label == "";
     height: 56px;
     border-top-left-radius: Ds.r-s; border-top-right-radius: Ds.r-s;
-    background: Theme.surface-container-highest;
-    Rectangle { y: parent.height - self.height; height: input.has-focus ? 2px : 1px; background: input.has-focus ? Theme.primary : Theme.on-surface-variant; }
-    Text { x: 16px; y: 7px; text: root.label; font-size: 11px; color: input.has-focus ? Theme.primary : Theme.on-surface-variant; }
-    if root.text == "" && !input.has-focus: Text { x: 16px; y: 26px; text: root.placeholder; font-size: 15px; color: Theme.on-surface-variant.with-alpha(0.6); }
+    background: ta.has-hover && !input.has-focus ? Theme.surface-container-highest.brighter(0.06) : Theme.surface-container-highest;
+    animate background { duration: Ds.t-fast; }
+    ta := TouchArea { mouse-cursor: MouseCursor.text; clicked => { input.focus(); } }
+    Rectangle {
+        y: parent.height - self.height; height: input.has-focus ? 2px : 1px;
+        background: input.has-focus ? Theme.primary : Theme.on-surface-variant;
+        animate height, background { duration: Ds.t-fast; }
+    }
+    Text {
+        x: Ds.s4; y: root.up ? 7px : (root.height - self.height) / 2;
+        text: root.label;
+        font-size: root.up ? 11px : 15px;
+        color: input.has-focus ? Theme.primary : Theme.on-surface-variant;
+        animate y, font-size { duration: Ds.t-fast; easing: cubic-bezier(0.20, 0.00, 0.00, 1.00); }
+        animate color { duration: Ds.t-fast; }
+    }
+    if root.text == "" && root.up: Text { x: Ds.s4; y: 26px; text: root.placeholder; font-size: 15px; color: Theme.on-surface-variant.with-alpha(0.6); }
     input := TextInput {
-        x: 16px; y: 24px; width: parent.width - 32px; height: 24px;
+        x: Ds.s4; y: 24px; width: parent.width - 2 * Ds.s4; height: 24px;
         text <=> root.text;
         input-type: root.input-type;
         font-size: 15px;
@@ -293,18 +428,72 @@ export component Field inherits Rectangle {
     }
 }
 
+/** Pill-shaped search box; `text` is two-way so screens can keep the query across visits. */
+export component Search inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder: @tr("Search");
+    callback edited(string);
+    min-width: 140px; preferred-width: 260px; height: Ds.control;
+    border-radius: self.height / 2;
+    background: inp.has-focus ? Theme.surface-container-highest : Theme.surface-container-high;
+    border-width: inp.has-focus ? 2px : 0; border-color: Theme.primary;
+    animate background { duration: Ds.t-fast; }
+    public function grab() { inp.focus(); }
+    TouchArea { mouse-cursor: MouseCursor.text; clicked => { inp.focus(); } }
+    HorizontalLayout {
+        padding-left: Ds.s4; padding-right: Ds.s2; spacing: Ds.s2;
+        Icon { glyph: "\u{e8b6}"; font-size: 18px; color: inp.has-focus ? Theme.primary : Theme.on-surface-variant; width: 20px; }
+        inp := TextInput {
+            vertical-alignment: center; font-size: 14px; color: Theme.on-surface; single-line: true;
+            selection-background-color: Theme.primary.with-alpha(0.35);
+            text <=> root.text;
+            edited => { root.edited(self.text); }
+        }
+        if root.text != "": VerticalLayout { alignment: center; Rectangle {
+            width: 28px; height: 28px; border-radius: self.width / 2;
+            background: Theme.on-surface.with-alpha(ca.has-hover ? 0.08 : 0);
+            Icon { glyph: "\u{e5cd}"; font-size: 16px; color: Theme.on-surface-variant; }
+            ca := TouchArea { mouse-cursor: pointer; clicked => { root.text = ""; root.edited(""); inp.focus(); } }
+        } }
+    }
+    if root.text == "": Text { x: 44px; height: parent.height; vertical-alignment: center; text: root.placeholder; font-size: 14px; color: Theme.on-surface-variant.with-alpha(0.7); }
+}
+
+/** Small inline input for settings; shows the model value again if the app rejects what was typed. */
+export component SmallField inherits Rectangle {
+    in property <string> value;
+    in property <length> w: 120px;
+    callback commit(string) -> bool;
+    width: w; height: Ds.control; border-radius: Ds.r-s;
+    background: Theme.surface-container-highest;
+    border-width: inp.has-focus ? 2px : 0; border-color: Theme.primary;
+    changed value => { if !inp.has-focus { inp.text = root.value; } }
+    function send() {
+        if inp.text == root.value { return; }
+        if !root.commit(inp.text) { inp.text = root.value; }
+    }
+    inp := TextInput {
+        x: Ds.s3; width: parent.width - 2 * Ds.s3; vertical-alignment: center;
+        text: root.value; font-size: 13px; color: Theme.on-surface; single-line: true;
+        selection-background-color: Theme.primary.with-alpha(0.35);
+        accepted => { root.send(); }
+        changed has-focus => { if !self.has-focus { root.send(); } }
+    }
+}
+
 /** Multi-line plain text area (paste configs, edit lists). */
 export component Area inherits Rectangle {
     in-out property <string> text;
     in property <string> placeholder;
     border-radius: Ds.r-s;
     background: Theme.surface-container-highest;
+    border-width: input.has-focus ? 2px : 0; border-color: Theme.primary;
     clip: true;
-    if root.text == "" && !input.has-focus: Text { x: 14px; y: 12px; text: root.placeholder; font-size: 13px; color: Theme.on-surface-variant.with-alpha(0.7); }
+    if root.text == "" && !input.has-focus: Text { x: 14px; y: Ds.s3; text: root.placeholder; font-size: 13px; color: Theme.on-surface-variant.with-alpha(0.7); }
     Flickable {
-        content-height: max(input.preferred-height + 24px, self.height);
+        content-height: max(input.preferred-height + 2 * Ds.s3, self.height);
         input := TextInput {
-            x: 14px; y: 12px; width: root.width - 28px;
+            x: 14px; y: Ds.s3; width: root.width - 28px;
             text <=> root.text;
             font-size: 13px;
             color: Theme.on-surface;
@@ -320,19 +509,20 @@ export component Area inherits Rectangle {
 export component Progress inherits Rectangle {
     in property <float> value: -1; // < 0 = indeterminate
     height: 4px;
-    border-radius: 2px;
+    border-radius: self.height / 2;
     background: Theme.secondary-container;
     clip: true;
     property <float> t: Theme.motion && value < 0 ? mod(animation-tick() / 1400ms, 1.0) : 0.3;
     Rectangle {
-        border-radius: 2px;
+        border-radius: self.height / 2;
         background: Theme.primary;
         width: root.value < 0 ? root.width * 0.35 : root.width * clamp(root.value, 0, 1);
         x: root.value < 0 ? (root.width * 1.35) * root.t - root.width * 0.35 : 0;
+        animate width { duration: root.value < 0 ? 0ms : Ds.t-med; easing: cubic-bezier(0.20, 0.00, 0.00, 1.00); }
     }
 }
 
-/** Tiny bar chart; values are 0..1. */
+/** Tiny bar chart; values are 0..1. Bars glide to new heights. */
 export component Spark inherits Rectangle {
     in property <[float]> values;
     in property <color> tint: Theme.primary;
@@ -342,18 +532,19 @@ export component Spark inherits Rectangle {
         x: i * root.bw; width: max(1px, root.bw - 2px);
         height: max(2px, root.height * clamp(v, 0, 1));
         y: root.height - self.height;
-        border-radius: min(3px, self.width / 2);
+        border-radius: min(Ds.s1, self.width / 2);
         background: root.tint.with-alpha(root.alpha * (0.45 + 0.55 * v));
+        animate height, y { duration: Ds.t-med; easing: cubic-bezier(0.20, 0.00, 0.00, 1.00); }
     }
 }
 
 /** Fades its content in and lifts it a little when it appears (M3 "emphasized decelerate"). Instant when the window is in the background. */
 export component Appear inherits Rectangle {
     in property <length> lift: 16px;
-    in property <duration> length: 320ms;
+    in property <duration> length: Ds.t-slow;
     property <float> t: 0;
     init => { root.t = 1; }
-    animate t { duration: Theme.motion ? root.length : 0ms; easing: cubic-bezier(0.05, 0.7, 0.1, 1.0); }
+    animate t { duration: Theme.motion ? root.length : 0ms; easing: cubic-bezier(0.05, 0.70, 0.10, 1.00); }
     opacity: root.t;
     Rectangle { y: (1 - root.t) * root.lift; width: root.width; height: root.height; @children }
 }
@@ -364,25 +555,28 @@ export component Scrim inherits Rectangle {
     TouchArea { clicked => { root.dismiss(); } }
 }
 
-/** Modal dialog: scrim + rounded card; content goes in @children. */
+/** Modal dialog: scrim + rounded card that springs up; content goes in @children. */
 export component Dialog inherits Rectangle {
     in property <string> title;
     in property <string> glyph;
     in property <length> card-width: 520px;
     callback dismiss;
-    property <float> t: 0;
-    init => { root.t = 1; }
-    animate t { duration: Theme.motion ? 260ms : 0ms; easing: cubic-bezier(0.05, 0.7, 0.1, 1.0); }
+    property <float> t: 0;   // fade
+    property <float> s: 0;   // spring scale
+    init => { root.t = 1; root.s = 1; }
+    animate t { duration: Theme.motion ? Ds.t-med : 0ms; easing: cubic-bezier(0.05, 0.70, 0.10, 1.00); }
+    animate s { duration: Theme.motion ? Ds.t-slow : 0ms; easing: cubic-bezier(0.38, 1.21, 0.22, 1.00); }
     Scrim { dismiss => { root.dismiss(); } opacity: root.t; }
     Rectangle {
         opacity: root.t;
-        transform-scale: 0.92 + 0.08 * root.t;
-        width: min(root.card-width, root.width - 48px);
-        height: min(lay.preferred-height, root.height - 48px);
+        transform-scale: 0.88 + 0.12 * root.s;
+        width: min(root.card-width, root.width - 2 * Ds.page);
+        height: min(lay.preferred-height, root.height - 2 * Ds.page);
         border-radius: Ds.r-xl;
         background: Theme.surface-container-high;
         drop-shadow-blur: 24px;
         drop-shadow-color: #00000060;
+        clip: true;
         TouchArea { } // swallow clicks
         lay := VerticalLayout {
             padding: Ds.s5; spacing: Ds.s4;

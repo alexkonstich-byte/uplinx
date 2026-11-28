@@ -1,5 +1,5 @@
 import { ListView, ScrollView } from "std-widgets.slint";
-import { Theme, Ds, Logo, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Label, Row, Shape, Avatar, Field, Progress, Spark } from "theme.slint";
+import { Theme, Ds, Logo, Icon, IconButton, Button, Chip, Segmented, Switch, Card, Title, Heading, Label, Row, Shape, Avatar, Field, Progress, Spark, Surface, MenuItem, Tag, Search, SmallField, Appear } from "theme.slint";
 import { Ui, Logic, NodeItem, SubItem, RuleItem, AppItem } from "data.slint";
 import { Shapes } from "shapes.slint";
 
@@ -15,6 +15,22 @@ export global Nav {
     in-out property <bool> edit-layout;
     in-out property <bool> mini;
     in-out property <int> focus-search;   // bumped by Ctrl+F
+    // screen state that must survive leaving the screen (the filters live on in Rust)
+    in-out property <string> server-query;
+    in-out property <string> log-query;
+    in-out property <int> log-filter;
+}
+
+/** Big decorative shape for empty screens: pops in, then turns slowly while the window is active. */
+component EmptyShape inherits Rectangle {
+    in property <string> shape;
+    width: 96px; height: 96px;
+    property <float> t: 0;
+    init => { root.t = 1; }
+    animate t { duration: Theme.motion ? Ds.t-slow : 0ms; easing: cubic-bezier(0.38, 1.21, 0.22, 1.00); }
+    transform-scale: 0.6 + 0.4 * root.t;
+    transform-rotation: Theme.motion ? mod(animation-tick() / 20s, 1.0) * 360deg : 0deg;
+    Shape { width: 100%; height: 100%; shape: root.shape; fill: Theme.secondary-container; }
 }
 
 export component PingChip inherits Rectangle {
@@ -22,14 +38,31 @@ export component PingChip inherits Rectangle {
     in property <bool> testing;
     callback clicked;
     property <color> c: ping == -100 ? Theme.on-surface-variant : (ping < 0 ? Theme.error : (ping < 200 ? Theme.good : (ping < 500 ? Theme.warn : Theme.error)));
-    height: 28px;
-    width: max(64px, t.preferred-width + 24px);
+    height: Ds.tag;
+    width: max(64px, t.preferred-width + 2 * Ds.s3);
     border-radius: self.height / 2;
-    background: ta.has-hover ? c.with-alpha(0.22) : c.with-alpha(0.12);
+    background: c.with-alpha(ta.pressed ? 0.3 : (ta.has-hover ? 0.22 : 0.12));
+    animate background { duration: Ds.t-fast; }
+    animate width { duration: Ds.t-med; easing: cubic-bezier(0.38, 1.21, 0.22, 1.00); }
+    transform-scale: ta.pressed ? Ds.press : 1;
+    animate transform-scale { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
+    // three dots that wave while the server is being tested
+    property <float> wave: Theme.motion && root.testing ? mod(animation-tick() / 900ms, 1.0) : 0;
     t := Text {
-        text: root.testing ? "···" : (root.ping == -100 ? "— ms" : (root.ping == -1 ? @tr("timeout") : (root.ping == -3 ? "TUN?" : root.ping + " ms")));
+        text: root.ping == -100 ? "— ms" : (root.ping == -1 ? @tr("timeout") : (root.ping == -3 ? "TUN?" : root.ping + " ms"));
         font-size: 12px; font-weight: 600; color: root.c;
-        opacity: root.testing ? 0.6 : 1;
+        opacity: root.testing ? 0 : 1;
+        animate color, opacity { duration: Ds.t-fast; }
+    }
+    if root.testing: HorizontalLayout {
+        alignment: center; spacing: 3px;
+        for k in [0, 1, 2]: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 5px; height: 5px; border-radius: self.width / 2; background: root.c;
+                opacity: 0.35 + 0.65 * max(0, sin((root.wave - k * 0.15) * 360deg));
+            }
+        }
     }
     ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
@@ -41,7 +74,12 @@ component NodeRow inherits Rectangle {
         TouchArea { mouse-cursor: pointer; clicked => { Logic.toggle-group(root.n.id); } }
         HorizontalLayout {
             padding-left: Ds.s3; padding-top: Ds.s3; spacing: Ds.s2; alignment: start;
-            Icon { glyph: root.n.collapsed ? "\u{e5cc}" : "\u{e5cf}"; font-size: 18px; width: 20px; color: Theme.primary; }
+            Icon {
+                glyph: "\u{e5cf}"; font-size: 18px; width: 20px; color: Theme.primary;
+                // the chevron turns instead of jumping between two glyphs
+                transform-rotation: root.n.collapsed ? -90deg : 0deg;
+                animate transform-rotation { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
+            }
             if root.n.has-flag: Image { source: root.n.flag; width: 20px; height: 20px; y: (parent.height - self.height) / 2 + Ds.s3 / 2; }
             Text { text: root.n.name; font-size: 13px; font-weight: 700; color: Theme.primary; vertical-alignment: center; overflow: elide; }
             Text { text: root.n.count; font-size: 12px; color: Theme.on-surface-variant; vertical-alignment: center; }
@@ -50,10 +88,13 @@ component NodeRow inherits Rectangle {
     }
     if !root.n.header: Rectangle {
         y: Ds.list-gap / 2; height: parent.height - Ds.list-gap;
-        border-radius: root.n.selected ? Ds.r-l : Ds.r-m;
-        background: root.n.selected ? Theme.secondary-container : (ta.has-hover ? Theme.surface-container-high : Theme.surface-container);
+        border-radius: root.n.selected || ta.pressed ? Ds.r-l : Ds.r-m;
+        background: root.n.selected ? Theme.secondary-container : (ta.pressed ? Theme.surface-container-highest : (ta.has-hover ? Theme.surface-container-high : Theme.surface-container));
         opacity: root.n.hidden ? 0.55 : 1;
-        animate background, border-radius { duration: 180ms; }
+        animate background { duration: Ds.t-fast; }
+        animate border-radius { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
+        transform-scale: ta.pressed ? 0.985 : 1;
+        animate transform-scale { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
         ta := TouchArea { mouse-cursor: pointer; clicked => { Logic.select-node(root.n.id); } }
         HorizontalLayout {
             padding-left: Ds.s3; padding-right: Ds.s2; spacing: Ds.s3;
@@ -67,17 +108,13 @@ component NodeRow inherits Rectangle {
                 }
                 Text { text: root.n.detail; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; }
             }
-            if root.n.speed != "": VerticalLayout { alignment: center; Rectangle {
-                height: 28px; width: st.preferred-width + 24px; border-radius: self.height / 2; background: Theme.tertiary.with-alpha(0.14);
-                st := Text { text: root.n.speed; font-size: 12px; font-weight: 600; color: Theme.tertiary; }
-            } }
+            if root.n.speed != "": VerticalLayout { alignment: center; Tag { text: root.n.speed; fg: Theme.tertiary; bg: Theme.tertiary.with-alpha(0.14); } }
             VerticalLayout { alignment: center; PingChip { ping: root.n.ping; testing: root.n.testing; clicked => { Logic.ping-node(root.n.id); } } }
             VerticalLayout { alignment: center; IconButton { glyph: "\u{e5d4}"; tooltip: @tr("More"); clicked => { menu.show(); } } }
         }
         menu := PopupWindow {
-            x: parent.width - 220px; y: parent.height - 8px; width: 212px;
-            Rectangle {
-                border-radius: Ds.r-m; background: Theme.surface-container-highest; drop-shadow-blur: 12px; drop-shadow-color: #00000050;
+            x: parent.width - 220px; y: parent.height - Ds.s2; width: 212px;
+            Surface {
                 VerticalLayout {
                     padding: Ds.s1;
                     for it in [
@@ -88,17 +125,7 @@ component NodeRow inherits Rectangle {
                         { k: "edit", t: @tr("Edit"), g: "\u{e3c9}" },
                         { k: root.n.hidden ? "unhide" : "hide", t: root.n.hidden ? @tr("Show") : @tr("Hide"), g: root.n.hidden ? "\u{e8f4}" : "\u{e8f5}" },
                         { k: "delete", t: @tr("Delete"), g: "\u{e872}" },
-                    ]: Rectangle {
-                        height: 40px;
-                        border-radius: Ds.r-s;
-                        background: mta.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
-                        HorizontalLayout {
-                            padding-left: Ds.s3; spacing: Ds.s3;
-                            Icon { glyph: it.g; font-size: 18px; color: Theme.on-surface-variant; width: 20px; }
-                            Text { text: it.t; font-size: 14px; color: it.k == "delete" ? Theme.error : Theme.on-surface; vertical-alignment: center; }
-                        }
-                        mta := TouchArea { clicked => { Logic.node-menu(root.n.id, it.k); } }
-                    }
+                    ]: MenuItem { glyph: it.g; text: it.t; danger: it.k == "delete"; clicked => { menu.close(); Logic.node-menu(root.n.id, it.k); } }
                 }
             }
         }
@@ -107,7 +134,8 @@ component NodeRow inherits Rectangle {
 
 export component ServersPage inherits Rectangle {
     property <int> focus-req: Nav.focus-search;
-    changed focus-req => { search.focus(); }
+    changed focus-req => { search.grab(); }
+    init => { if Nav.focus-search > 0 { search.grab(); } }
     VerticalLayout {
         padding: Ds.page; padding-right: Ds.s3; padding-bottom: 0; spacing: Ds.s4;
         HorizontalLayout {
@@ -115,24 +143,13 @@ export component ServersPage inherits Rectangle {
             Title { text: @tr("Servers"); }
             Text { text: Ui.node-count; font-size: 14px; color: Theme.on-surface-variant; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
-            Rectangle {
-                min-width: 140px; preferred-width: 260px; height: 40px; border-radius: self.height / 2; background: Theme.surface-container-high;
-                HorizontalLayout {
-                    padding-left: Ds.s4; padding-right: Ds.s4; spacing: Ds.s2;
-                    Icon { glyph: "\u{e8b6}"; font-size: 18px; color: Theme.on-surface-variant; width: 20px; }
-                    search := TextInput {
-                        vertical-alignment: center; font-size: 14px; color: Theme.on-surface; single-line: true;
-                        edited => { Logic.search(self.text); }
-                    }
-                }
-                if search.text == "": Text { x: 44px; vertical-alignment: center; height: parent.height; text: @tr("Search"); font-size: 14px; color: Theme.on-surface-variant.with-alpha(0.7); }
-            }
+            search := Search { text <=> Nav.server-query; edited(t) => { Logic.search(t); } }
             Button { kind: 1; glyph: "\u{e9e4}"; text: Ui.pinging ? @tr("Testing…") : @tr("Test all"); enabled: !Ui.pinging; clicked => { Logic.ping-all(); } }
             Button { kind: 1; glyph: "\u{ea0b}"; text: @tr("Fastest"); clicked => { Logic.connect-fastest(); } }
             Button { glyph: "\u{e145}"; text: @tr("Add"); clicked => { Nav.dialog = "import"; } }
         }
         HorizontalLayout {
-            spacing: 8px; alignment: start;
+            spacing: Ds.s2; alignment: start;
             Chip { text: @tr("Manual"); selected: Ui.settings.server-sort == 0; clicked => { Logic.set-sort(0); } }
             Chip { text: @tr("Name"); selected: Ui.settings.server-sort == 1; clicked => { Logic.set-sort(1); } }
             Chip { text: @tr("Ping"); selected: Ui.settings.server-sort == 2; clicked => { Logic.set-sort(2); } }
@@ -149,12 +166,18 @@ export component ServersPage inherits Rectangle {
                 clicked => { if Ui.speed-all-running { Logic.speed-all-stop(); } else { Logic.speed-all(); } }
             }
         }
-        if Ui.nodes.length == 0: VerticalLayout {
-            alignment: center; spacing: 12px; vertical-stretch: 1;
-            HorizontalLayout { alignment: center; Shape { width: 96px; height: 96px; shape: Shapes.flower; fill: Theme.secondary-container; } }
+        if Ui.nodes.length == 0 && Nav.server-query != "": VerticalLayout {
+            alignment: center; spacing: Ds.s3; vertical-stretch: 1;
+            Icon { glyph: "\u{e8b6}"; font-size: 48px; color: Theme.on-surface-variant; }
+            Text { text: @tr("Nothing found"); font-size: 18px; color: Theme.on-surface; horizontal-alignment: center; }
+            HorizontalLayout { alignment: center; Button { kind: 1; text: @tr("Clear search"); clicked => { Nav.server-query = ""; Logic.search(""); } } }
+        }
+        if Ui.nodes.length == 0 && Nav.server-query == "": VerticalLayout {
+            alignment: center; spacing: Ds.s3; vertical-stretch: 1;
+            HorizontalLayout { alignment: center; EmptyShape { shape: Shapes.flower; } }
             Text { text: @tr("No servers yet"); font-size: 18px; color: Theme.on-surface; horizontal-alignment: center; }
             Text { text: @tr("Paste a link, a subscription, a config or a QR code"); font-size: 13px; color: Theme.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
-            HorizontalLayout { alignment: center; spacing: 8px;
+            HorizontalLayout { alignment: center; spacing: Ds.s2;
                 Button { glyph: "\u{e14f}"; text: @tr("From clipboard"); clicked => { Logic.import-clipboard(); } }
                 Button { kind: 1; glyph: "\u{e145}"; text: @tr("Add"); clicked => { Nav.dialog = "import"; } }
             }
@@ -178,6 +201,7 @@ component SubCard inherits Card {
             spacing: Ds.s3;
             Rectangle {
                 width: 48px; height: 48px;
+                transform-rotation: root.s.updating && Theme.motion ? mod(animation-tick() / 2s, 1.0) * 360deg : 0deg;
                 if !root.s.has-logo: Shape { width: 100%; height: 100%; shape: Shapes.clover4; fill: Theme.primary-container; }
                 if !root.s.has-logo: Icon { glyph: "\u{eb5a}"; color: Theme.on-primary-container; }
                 if root.s.has-logo: Rectangle { border-radius: Ds.r-s; clip: true; background: Theme.surface-container-highest; Image { source: root.s.logo; width: 100%; height: 100%; image-fit: contain; } }
@@ -185,7 +209,7 @@ component SubCard inherits Card {
             VerticalLayout {
                 alignment: center; spacing: 2px; horizontal-stretch: 1;
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Ds.s2;
                     if root.s.pinned: Icon { glyph: "\u{f10d}"; font-size: 16px; color: Theme.primary; width: 18px; }
                     Text { text: root.s.name; font-size: 17px; font-weight: 600; color: Theme.on-surface; overflow: elide; horizontal-stretch: 1; }
                 }
@@ -200,7 +224,7 @@ component SubCard inherits Card {
             } }
         }
         if root.s.quota != "" || root.s.expire != "": VerticalLayout {
-            spacing: 6px;
+            spacing: Ds.s2;
             HorizontalLayout {
                 Text { text: root.s.quota; font-size: 13px; color: root.s.used-up ? Theme.error : Theme.on-surface; horizontal-stretch: 1; }
                 Text { text: root.s.expire; font-size: 13px; color: root.s.expired ? Theme.error : Theme.on-surface-variant; }
@@ -209,9 +233,9 @@ component SubCard inherits Card {
         }
         if root.s.history.length > 2: Spark { height: 36px; values: root.s.history; }
         if root.s.expired || root.s.used-up: HorizontalLayout {
-            spacing: 8px; alignment: start;
-            if root.s.expired: Rectangle { height: 28px; width: et.preferred-width + 24px; border-radius: Ds.r-xs; background: Theme.error-container; et := Text { text: @tr("Subscription expired"); font-size: 12px; color: Theme.on-error-container; } }
-            if root.s.used-up: Rectangle { height: 28px; width: ut.preferred-width + 24px; border-radius: Ds.r-xs; background: Theme.error-container; ut := Text { text: @tr("Out of traffic"); font-size: 12px; color: Theme.on-error-container; } }
+            spacing: Ds.s2; alignment: start;
+            if root.s.expired: Tag { text: @tr("Subscription expired"); fg: Theme.on-error-container; bg: Theme.error-container; }
+            if root.s.used-up: Tag { text: @tr("Out of traffic"); fg: Theme.on-error-container; bg: Theme.error-container; }
         }
         if root.s.announce != "": Rectangle {
             border-radius: Ds.r-m; background: Theme.tertiary-container; min-height: at.preferred-height + 2 * Ds.s3;
@@ -219,7 +243,7 @@ component SubCard inherits Card {
         }
         if root.s.error != "": Text { text: root.s.error; font-size: 12px; color: Theme.error; wrap: word-wrap; }
         if root.s.support != "" || root.s.website != "": HorizontalLayout {
-            spacing: 8px; alignment: start;
+            spacing: Ds.s2; alignment: start;
             if root.s.support != "": Button { kind: 2; glyph: "\u{e0c6}"; text: @tr("Support"); clicked => { Logic.open-url(root.s.support); } }
             if root.s.website != "": Button { kind: 2; glyph: "\u{e80b}"; text: @tr("Website"); clicked => { Logic.open-url(root.s.website); } }
         }
@@ -237,8 +261,8 @@ export component SubsPage inherits Rectangle {
             Button { glyph: "\u{e145}"; text: @tr("Add subscription"); clicked => { Nav.b = ""; Nav.c = ""; Nav.dialog = "add-sub"; } }
         }
         if Ui.subs.length == 0: VerticalLayout {
-            alignment: center; spacing: 12px; vertical-stretch: 1;
-            HorizontalLayout { alignment: center; Shape { width: 96px; height: 96px; shape: Shapes.clover8; fill: Theme.secondary-container; } }
+            alignment: center; spacing: Ds.s3; vertical-stretch: 1;
+            HorizontalLayout { alignment: center; EmptyShape { shape: Shapes.clover8; } }
             Text { text: @tr("No subscriptions"); font-size: 18px; color: Theme.on-surface; horizontal-alignment: center; }
             Text { text: @tr("A subscription is a link from your VPN provider. Servers and remaining traffic update automatically."); font-size: 13px; color: Theme.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
         }
@@ -251,26 +275,29 @@ export component SubsPage inherits Rectangle {
 
 // ============================================================ routing
 
+/** Proxy / Direct / Block in the colours used everywhere. */
+component ActionTag inherits Tag {
+    in property <string> action;
+    min-w: 84px;
+    text: action == "BLOCK" ? @tr("Block") : (action == "DIRECT" ? @tr("Direct") : @tr("Proxy"));
+    bg: action == "BLOCK" ? Theme.error-container : (action == "DIRECT" ? Theme.tertiary-container : Theme.primary-container);
+    fg: action == "BLOCK" ? Theme.on-error-container : (action == "DIRECT" ? Theme.on-tertiary-container : Theme.on-primary-container);
+}
+
 component RuleRow inherits Rectangle {
     in property <RuleItem> r;
     in property <int> index;
     in property <int> total;
     height: 56px;
-    border-radius: Ds.r-m;
-    background: ta.has-hover ? Theme.surface-container-high : Theme.surface-container;
+    border-radius: ta.pressed ? Ds.r-l : Ds.r-m;
+    background: ta.pressed ? Theme.surface-container-highest : (ta.has-hover ? Theme.surface-container-high : Theme.surface-container);
     opacity: r.enabled ? 1 : 0.5;
+    animate background, opacity { duration: Ds.t-fast; }
+    animate border-radius { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
     ta := TouchArea { mouse-cursor: pointer; clicked => { Nav.a = root.r.id; Nav.b = root.r.kind; Nav.c = root.r.value; Nav.d = root.r.action; Nav.dialog = "rule"; } }
     HorizontalLayout {
         padding-left: Ds.s3; padding-right: Ds.s2; padding-top: Ds.s2; padding-bottom: Ds.s2; spacing: Ds.s3;
-        VerticalLayout { alignment: center; Rectangle {
-            width: 84px; height: 28px; border-radius: self.height / 2;
-            background: root.r.action == "BLOCK" ? Theme.error-container : (root.r.action == "DIRECT" ? Theme.tertiary-container : Theme.primary-container);
-            Text {
-                text: root.r.action == "BLOCK" ? @tr("Block") : (root.r.action == "DIRECT" ? @tr("Direct") : @tr("Proxy"));
-                font-size: 12px; font-weight: 600;
-                color: root.r.action == "BLOCK" ? Theme.on-error-container : (root.r.action == "DIRECT" ? Theme.on-tertiary-container : Theme.on-primary-container);
-            }
-        } }
+        VerticalLayout { alignment: center; ActionTag { action: root.r.action; } }
         Text { text: root.r.kind; font-size: 11px; color: Theme.on-surface-variant; vertical-alignment: center; width: 70px; }
         if root.r.has-icon: Image { source: root.r.icon; width: 24px; height: 24px; y: (parent.height - self.height) / 2; }
         Text { text: root.r.value; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
@@ -306,7 +333,7 @@ export component RoutingPage inherits Rectangle {
                     }
                 }
             }
-            Text { text: @tr("Ready-made rules"); font-size: 14px; font-weight: 700; color: Theme.primary; }
+            Heading { text: @tr("Ready-made rules"); }
             Card {
                 min-height: pr.preferred-height;
                 pr := VerticalLayout {
@@ -328,24 +355,16 @@ export component RoutingPage inherits Rectangle {
                         rq := Field { label: @tr("Site or IP"); placeholder: "youtube.com"; horizontal-stretch: 1; accepted(t) => { Logic.route-check(t); } }
                         VerticalLayout { alignment: center; Button { kind: 1; glyph: "\u{e8b6}"; text: @tr("Check"); enabled: rq.text != "" && !Ui.route-checking; clicked => { Logic.route-check(rq.text); } } }
                     }
-                    if Ui.route-action != "": HorizontalLayout {
+                    if Ui.route-action != "": Appear { lift: 8px; length: Ds.t-med; min-height: rv.preferred-height; rv := HorizontalLayout {
                         spacing: Ds.s3;
-                        VerticalLayout { alignment: center; Rectangle {
-                            width: 84px; height: 28px; border-radius: self.height / 2;
-                            background: Ui.route-action == "BLOCK" ? Theme.error-container : (Ui.route-action == "DIRECT" ? Theme.tertiary-container : Theme.primary-container);
-                            Text {
-                                text: Ui.route-action == "BLOCK" ? @tr("Block") : (Ui.route-action == "DIRECT" ? @tr("Direct") : @tr("Proxy"));
-                                font-size: 12px; font-weight: 600;
-                                color: Ui.route-action == "BLOCK" ? Theme.on-error-container : (Ui.route-action == "DIRECT" ? Theme.on-tertiary-container : Theme.on-primary-container);
-                            }
-                        } }
+                        VerticalLayout { alignment: center; ActionTag { action: Ui.route-action; } }
                         Text { text: Ui.route-reason; font-size: 13px; color: Theme.on-surface-variant; wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
-                    }
+                    } }
                 }
             }
             HorizontalLayout {
                 padding-top: Ds.s2; spacing: Ds.s2;
-                Text { text: @tr("Rules"); font-size: 14px; font-weight: 700; color: Theme.primary; vertical-alignment: center; horizontal-stretch: 1; }
+                Heading { text: @tr("Rules"); horizontal-stretch: 1; }
                 Button { kind: 2; glyph: "\u{e5c3}"; text: @tr("Programs"); clicked => { Logic.refresh-processes(); Nav.b = "rule"; Nav.dialog = "processes"; } }
                 Button { kind: 2; text: @tr("RU preset"); clicked => { Logic.apply-preset("ru"); } }
                 Button { glyph: "\u{e145}"; text: @tr("Add rule"); clicked => { Nav.a = ""; Nav.b = "DOMAIN"; Nav.c = ""; Nav.d = "PROXY"; Nav.dialog = "rule"; } }
@@ -356,7 +375,7 @@ export component RoutingPage inherits Rectangle {
             // split tunnelling
             HorizontalLayout {
                 padding-top: Ds.s2; spacing: Ds.s3;
-                Text { text: @tr("Split tunnelling"); font-size: 14px; font-weight: 700; color: Theme.primary; vertical-alignment: center; horizontal-stretch: 1; }
+                Heading { text: @tr("Split tunnelling"); horizontal-stretch: 1; }
                 Switch { checked: Ui.routing.split-enabled; toggled(v) => { Logic.set-routing-bool("split-enabled", v); } }
             }
             Text { text: @tr("Choose which programs use the VPN. Works in both modes."); font-size: 13px; color: Theme.on-surface-variant; wrap: word-wrap; }
@@ -387,7 +406,6 @@ export component RoutingPage inherits Rectangle {
 // ============================================================ logs
 
 export component LogsPage inherits Rectangle {
-    in-out property <int> filter: 0;
     VerticalLayout {
         padding: Ds.page; spacing: Ds.s4;
         HorizontalLayout {
@@ -401,25 +419,17 @@ export component LogsPage inherits Rectangle {
         HorizontalLayout {
             spacing: Ds.s2;
             VerticalLayout { alignment: center; HorizontalLayout { spacing: Ds.s2;
-                Chip { text: @tr("All"); selected: root.filter == 0; clicked => { root.filter = 0; Logic.set-log-filter(0); } }
-                Chip { text: @tr("Warnings"); selected: root.filter == 1; clicked => { root.filter = 1; Logic.set-log-filter(1); } }
-                Chip { text: @tr("Errors"); selected: root.filter == 2; clicked => { root.filter = 2; Logic.set-log-filter(2); } }
+                Chip { text: @tr("All"); selected: Nav.log-filter == 0; clicked => { Nav.log-filter = 0; Logic.set-log-filter(0); } }
+                Chip { text: @tr("Warnings"); selected: Nav.log-filter == 1; clicked => { Nav.log-filter = 1; Logic.set-log-filter(1); } }
+                Chip { text: @tr("Errors"); selected: Nav.log-filter == 2; clicked => { Nav.log-filter = 2; Logic.set-log-filter(2); } }
                 Chip { text: Ui.logs-paused ? @tr("Paused") : @tr("Pause"); glyph: "\u{e034}"; selected: Ui.logs-paused; clicked => { Logic.set-logs-paused(!Ui.logs-paused); } }
             } }
             Rectangle { horizontal-stretch: 1; }
-            Rectangle {
-                min-width: 160px; preferred-width: 260px; height: 40px; border-radius: self.height / 2; background: Theme.surface-container-high;
-                HorizontalLayout {
-                    padding-left: Ds.s4; padding-right: Ds.s4; spacing: Ds.s2;
-                    Icon { glyph: "\u{e8b6}"; font-size: 18px; color: Theme.on-surface-variant; width: 20px; }
-                    lq := TextInput { vertical-alignment: center; font-size: 14px; color: Theme.on-surface; single-line: true; edited => { Logic.set-log-search(self.text); } }
-                }
-                if lq.text == "": Text { x: 44px; height: parent.height; vertical-alignment: center; text: @tr("Search"); font-size: 14px; color: Theme.on-surface-variant.with-alpha(0.7); }
-            }
+            Search { min-width: 160px; text <=> Nav.log-query; edited(t) => { Logic.set-log-search(t); } }
         }
         Rectangle {
             border-radius: Ds.r-l; background: Theme.surface-container-low; vertical-stretch: 1; clip: true;
-            if Ui.logs.length == 0: Text { text: @tr("Nothing here yet"); color: Theme.on-surface-variant; font-size: 13px; }
+            if Ui.logs.length == 0: Text { text: Nav.log-query != "" || Nav.log-filter != 0 ? @tr("Nothing found") : @tr("Nothing here yet"); color: Theme.on-surface-variant; font-size: 13px; }
             ListView {
                 for l in Ui.logs: HorizontalLayout {
                     padding-left: Ds.s4; padding-right: Ds.s5; padding-top: Ds.s1; padding-bottom: Ds.s1; spacing: Ds.s3;
@@ -437,23 +447,8 @@ export component LogsPage inherits Rectangle {
 component Section inherits VerticalLayout {
     in property <string> title;
     spacing: Ds.s2;
-    Text { text: root.title; font-size: 14px; font-weight: 700; color: Theme.primary; }
+    Heading { text: root.title; }
     Card { min-height: inner.preferred-height; inner := VerticalLayout { padding-top: Ds.s2; padding-bottom: Ds.s2; @children } }
-}
-
-component SmallField inherits Rectangle {
-    in property <string> value;
-    in property <length> w: 120px;
-    callback commit(string);
-    width: w; height: 40px; border-radius: Ds.r-s;
-    background: Theme.surface-container-highest;
-    border-width: inp.has-focus ? 2px : 0; border-color: Theme.primary;
-    inp := TextInput {
-        x: Ds.s3; width: parent.width - 2 * Ds.s3; vertical-alignment: center;
-        text: root.value; font-size: 13px; color: Theme.on-surface; single-line: true;
-        accepted => { root.commit(self.text); }
-        changed has-focus => { if !self.has-focus && self.text != root.value { root.commit(self.text); } }
-    }
 }
 
 export component SettingsPage inherits Rectangle {
@@ -474,7 +469,10 @@ export component SettingsPage inherits Rectangle {
                         for c in root.seeds: Rectangle {
                             width: 28px; height: 28px; border-radius: self.width / 2; background: c;
                             border-width: Ui.settings.seed == c ? 3px : 0; border-color: Theme.on-surface;
-                            TouchArea { mouse-cursor: pointer; clicked => { Logic.set-seed(c); } }
+                            animate border-width { duration: Ds.t-fast; }
+                            transform-scale: sa.pressed ? 0.85 : (Ui.settings.seed == c ? 1.12 : (sa.has-hover ? 1.06 : 1));
+                            animate transform-scale { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
+                            sa := TouchArea { mouse-cursor: pointer; clicked => { Logic.set-seed(c); } }
                         }
                     }
                 }
@@ -484,8 +482,8 @@ export component SettingsPage inherits Rectangle {
             Section {
                 title: @tr("Connection");
                 Row { title: @tr("Mode"); subtitle: @tr("TUN captures all apps and needs administrator rights"); Segmented { width: 330px; options: [@tr("System proxy"), "TUN"]; index: Ui.settings.connect-mode; picked(i) => { Logic.set-connect-mode(i); } } }
-                Row { title: @tr("SOCKS port"); SmallField { value: Ui.settings.socks-port; commit(t) => { Logic.set-text("socks-port", t); } } }
-                Row { title: @tr("HTTP port"); SmallField { value: Ui.settings.http-port; commit(t) => { Logic.set-text("http-port", t); } } }
+                Row { title: @tr("SOCKS port"); SmallField { value: Ui.settings.socks-port; commit(t) => { return Logic.set-text("socks-port", t); } } }
+                Row { title: @tr("HTTP port"); SmallField { value: Ui.settings.http-port; commit(t) => { return Logic.set-text("http-port", t); } } }
                 Row { title: @tr("Allow LAN connections"); subtitle: @tr("Other devices in your network can use this proxy"); Switch { checked: Ui.settings.allow-lan; toggled(v) => { Logic.set-bool("allow-lan", v); } } }
                 Row { title: @tr("Sniffing"); subtitle: @tr("Detect domains inside traffic for routing rules"); Switch { checked: Ui.settings.sniffing; toggled(v) => { Logic.set-bool("sniffing", v); } } }
                 Row { title: "Mux"; subtitle: @tr("Several connections in one; may reduce speed"); Switch { checked: Ui.settings.mux; toggled(v) => { Logic.set-bool("mux", v); } } }
@@ -493,16 +491,16 @@ export component SettingsPage inherits Rectangle {
                 Row { title: @tr("Kill switch"); subtitle: @tr("System proxy mode: if the connection drops, block traffic instead of letting it go around the VPN"); Switch { checked: Ui.settings.kill-switch; toggled(v) => { Logic.set-bool("kill-switch", v); } } }
                 Row { title: "IPv6"; Switch { checked: Ui.settings.ipv6; toggled(v) => { Logic.set-bool("ipv6", v); } } }
                 Row { title: @tr("Strict DNS in TUN"); subtitle: @tr("Blocks DNS leaks past the tunnel"); Switch { checked: Ui.settings.tun-strict-dns; toggled(v) => { Logic.set-bool("tun-strict-dns", v); } } }
-                Row { title: @tr("Remote DNS"); SmallField { w: 280px; value: Ui.settings.remote-dns; commit(t) => { Logic.set-text("remote-dns", t); } } }
-                Row { title: @tr("Direct DNS"); SmallField { w: 280px; value: Ui.settings.direct-dns; commit(t) => { Logic.set-text("direct-dns", t); } } }
-                Row { title: @tr("Ping URL"); SmallField { w: 280px; value: Ui.settings.ping-url; commit(t) => { Logic.set-text("ping-url", t); } } }
+                Row { title: @tr("Remote DNS"); SmallField { w: 280px; value: Ui.settings.remote-dns; commit(t) => { return Logic.set-text("remote-dns", t); } } }
+                Row { title: @tr("Direct DNS"); SmallField { w: 280px; value: Ui.settings.direct-dns; commit(t) => { return Logic.set-text("direct-dns", t); } } }
+                Row { title: @tr("Ping URL"); SmallField { w: 280px; value: Ui.settings.ping-url; commit(t) => { return Logic.set-text("ping-url", t); } } }
                 Row { title: @tr("Log level"); Segmented { width: 400px; options: ["debug", "info", "warning", "error", "none"]; index: Ui.settings.log-level; picked(i) => { Logic.set-int("log-level", i); } } }
             }
 
             Section {
                 title: @tr("Subscriptions");
                 Row { title: @tr("Present as"); subtitle: @tr("Some services only give servers to certain clients"); Segmented { width: 330px; options: [@tr("None"), "Happ", "INCY"]; index: Ui.settings.client-spoof; picked(i) => { Logic.set-int("client-spoof", i); } } }
-                Row { title: "User-Agent"; SmallField { w: 220px; value: Ui.settings.user-agent; commit(t) => { Logic.set-text("user-agent", t); } } }
+                Row { title: "User-Agent"; SmallField { w: 220px; value: Ui.settings.user-agent; commit(t) => { return Logic.set-text("user-agent", t); } } }
                 Row { title: @tr("Routing from the service"); subtitle: @tr("Apply routing profiles and rules that come with subscriptions"); Switch { checked: Ui.settings.apply-panel-routing; toggled(v) => { Logic.set-bool("apply-panel-routing", v); } } }
                 Row { title: @tr("Ping servers after updating"); Switch { checked: Ui.settings.auto-ping; toggled(v) => { Logic.set-bool("auto-ping", v); } } }
                 Row { title: @tr("Offer links from the clipboard"); subtitle: @tr("When you open Uplinx with a new link or subscription copied"); Switch { checked: Ui.settings.clipboard-offer; toggled(v) => { Logic.set-bool("clipboard-offer", v); } } }

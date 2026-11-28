@@ -28,6 +28,7 @@ pub struct View {
     sig_widgets: u64,
     sig_logs: (usize, i32, i64),
     sig_settings: u64,
+    widgets: Option<Rc<VecModel<WidgetItem>>>,
     pub editing: Option<String>,
 }
 
@@ -363,8 +364,12 @@ impl View {
         let sig = hash(&st.settings.home_widgets.iter().map(|w| (&w.id, &w.kind, w.x, w.y, w.w, w.h)).collect::<Vec<_>>());
         if sig != self.sig_widgets {
             self.sig_widgets = sig;
-            ui.set_widgets(model(st.settings.home_widgets.iter().map(|w| WidgetItem { id: ss(&w.id), kind: ss(&w.kind), x: w.x, y: w.y, w: w.w, h: w.h }).collect()));
-            ui.set_grid_rows(st.settings.home_widgets.iter().map(|w| w.y + w.h).max().unwrap_or(1));
+            let items: Vec<WidgetItem> = st.settings.home_widgets.iter().map(|w| {
+                let (min_w, min_h) = crate::layout::min_size(&w.kind);
+                WidgetItem { id: ss(&w.id), kind: ss(&w.kind), x: w.x, y: w.y, w: w.w, h: w.h, min_w, min_h }
+            }).collect();
+            self.sync_widgets(&ui, items);
+            ui.set_grid_rows(st.settings.home_widgets.iter().map(|w| w.y.max(0) + w.h.max(crate::layout::min_size(&w.kind).1)).max().unwrap_or(1));
         }
 
         // ---- logs
@@ -381,7 +386,8 @@ impl View {
         } else { drop(logs); }
 
         // ---- settings
-        let sig = hash(&serde_json::to_string(&st.settings).unwrap_or_default());
+        // autostart lives in the registry, not in the settings: it is part of the signature too
+        let sig = hash(&(serde_json::to_string(&st.settings).unwrap_or_default(), crate::win::autostart()));
         if sig != self.sig_settings {
             self.sig_settings = sig;
             let s = &st.settings;
@@ -427,6 +433,29 @@ impl View {
         ui.set_singbox_version(ss(app.singbox_version()));
         ui.set_show_disclaimer(!st.settings.disclaimer_accepted);
         ui.set_is_admin(crate::win::is_admin());
+    }
+
+    /// Updates the widget model in place, row by row, keyed by id. Replacing the model would rebuild every tile:
+    /// all of them would replay their entrance and nothing could glide to its new place.
+    fn sync_widgets(&mut self, ui: &Ui, items: Vec<WidgetItem>) {
+        use slint::Model;
+        let Some(m) = self.widgets.clone() else {
+            let m = Rc::new(VecModel::from(items));
+            ui.set_widgets(ModelRc::from(m.clone()));
+            self.widgets = Some(m);
+            return;
+        };
+        let mut i = 0;
+        while i < m.row_count() {
+            let id = m.row_data(i).map(|r| r.id).unwrap_or_default();
+            if items.iter().any(|x| x.id == id) { i += 1; } else { m.remove(i); }
+        }
+        for it in items {
+            match (0..m.row_count()).find(|&r| m.row_data(r).is_some_and(|x| x.id == it.id)) {
+                Some(r) => if m.row_data(r).as_ref() != Some(&it) { m.set_row_data(r, it); },
+                None => m.push(it),
+            }
+        }
     }
 
     /// Fields of the server editor (simple key/value list over the stored JSON).

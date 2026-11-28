@@ -154,9 +154,10 @@ fn dns_server(addr: &str, tag: &str, detour: Option<&str>) -> Value {
         Some(("https", r)) => ("https", r), Some(("tls", r)) => ("tls", r), Some(("quic", r)) => ("quic", r),
         Some(("tcp", r)) => ("tcp", r), Some((_, r)) => ("udp", r), None => ("udp", a),
     };
-    let (host, path) = match rest.split_once('/') { Some((h, p)) => (h, format!("/{p}")), None => (rest, String::new()) };
-    let mut s = json!({ "type": kind, "tag": tag, "server": host.split(':').next().unwrap_or(host) });
-    if let Some(p) = host.split(':').nth(1).and_then(|p| p.parse::<u16>().ok()) { s["server_port"] = json!(p); }
+    let path = rest.split_once('/').map(|(_, p)| format!("/{p}")).unwrap_or_default();
+    let (host, port) = super::xray::dns_endpoint(a);
+    let mut s = json!({ "type": kind, "tag": tag, "server": host });
+    if let Some(p) = port { s["server_port"] = json!(p); }
     if kind == "https" && !path.is_empty() && path != "/dns-query" { s["path"] = json!(path); }
     if let Some(d) = detour { s["detour"] = json!(d); }
     s

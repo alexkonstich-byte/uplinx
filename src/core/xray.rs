@@ -210,11 +210,47 @@ fn stream(n: &ProxyNode, s: &AppSettings) -> Value {
     ss
 }
 
+/// Host and port of a DNS server address in any form the settings accept:
+/// `77.88.8.8`, `77.88.8.8:53`, `2a02:6b8::feed:ff`, `[2a02:6b8::feed:ff]:53`, `https://dns.example/dns-query`, `tcp://host:53`.
+pub fn dns_endpoint(addr: &str) -> (String, Option<u16>) {
+    let a = addr.trim();
+    let rest = a.split_once("://").map_or(a, |(_, r)| r);
+    let hostport = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if let Some(r) = hostport.strip_prefix('[') {
+        let (h, tail) = r.split_once(']').unwrap_or((r, ""));
+        return (h.to_string(), tail.strip_prefix(':').and_then(|p| p.parse().ok()));
+    }
+    if hostport.parse::<std::net::Ipv6Addr>().is_ok() { return (hostport.to_string(), None); }
+    match hostport.rsplit_once(':') {
+        Some((h, p)) => (h.to_string(), p.parse().ok()),
+        None => (hostport.to_string(), None),
+    }
+}
+
+/// A DNS address the cores can use: a host is there and nothing that can't be part of one.
+pub fn valid_dns(addr: &str) -> bool {
+    let (host, _) = dns_endpoint(addr);
+    !host.is_empty() && !addr.trim().contains(char::is_whitespace)
+}
+
+/// A DNS server entry for Xray: URLs as they are; a plain `host:port` has to give the port separately.
+fn dns_server(addr: &str) -> Value {
+    let a = addr.trim();
+    if a.contains("://") { return json!({ "address": a }); }
+    let (host, port) = dns_endpoint(a);
+    let mut v = json!({ "address": host });
+    if let Some(p) = port { v["port"] = json!(p); }
+    v
+}
+
 fn dns(s: &AppSettings, r: &RoutingSettings) -> Value {
-    let mut servers = vec![json!(s.remote_dns)];
-    if r.mode == "RULE" && (r.bypass_ru || r.proxy_blocked_ru) {
+    let mut servers = vec![dns_server(&s.remote_dns)];
+    if r.mode == "RULE" && (r.bypass_ru || r.proxy_blocked_ru) && valid_dns(&s.direct_dns) {
         let dom = if s.geo_source == "RUNETFREEDOM" && r.proxy_blocked_ru { "geosite:ru-available-only-inside" } else { "geosite:category-ru" };
-        servers.push(json!({ "address": s.direct_dns, "domains": [dom], "skipFallback": true }));
+        let mut d = dns_server(&s.direct_dns);
+        d["domains"] = json!([dom]);
+        d["skipFallback"] = json!(true);
+        servers.push(d);
     }
     json!({ "tag": "dns-internal", "servers": servers, "queryStrategy": if s.ipv6 { "UseIP" } else { "UseIPv4" } })
 }
@@ -241,8 +277,9 @@ pub fn routing(s: &AppSettings, r: &RoutingSettings) -> Value {
     }
     if r.mode == "RULE" && r.bypass_ru {
         // the direct resolver itself must never go through the proxy
-        let ip = s.direct_dns.split("://").last().unwrap_or("").split('/').next().unwrap_or("").split(':').next().unwrap_or("").to_string();
-        rules.push(rule("direct", json!({ "ip": [ip] })));
+        let (host, _) = dns_endpoint(&s.direct_dns);
+        if let Ok(ip) = host.parse::<std::net::IpAddr>() { rules.push(rule("direct", json!({ "ip": [ip.to_string()] }))); }
+        else if !host.is_empty() { rules.push(rule("direct", json!({ "domain": [format!("full:{host}")] }))); }
     }
     match r.mode.as_str() {
         "DIRECT" => rules.push(rule("direct", json!({ "network": "tcp,udp" }))),

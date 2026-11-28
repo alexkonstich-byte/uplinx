@@ -1,5 +1,5 @@
 // Home: a dashboard of widgets on a 12-column grid. In edit mode widgets can be dragged, resized, added and removed.
-import { Theme, Ds, Logo, Field, Icon, IconButton, Button, Chip, Segmented, Card, Label, Shape, Avatar, Progress, Spark } from "theme.slint";
+import { Theme, Ds, Logo, Field, Icon, IconButton, Button, Chip, Segmented, Card, Label, Shape, Avatar, Progress, Spark, Surface, MenuItem, Appear } from "theme.slint";
 import { Ui, Logic, WidgetItem, NodeItem } from "data.slint";
 import { Shapes } from "shapes.slint";
 import { Nav, PingChip } from "pages.slint";
@@ -11,28 +11,35 @@ export component ConnectButton inherits Rectangle {
     property <float> speed: state == 1 ? 1.0 / 1.6 : (state == 2 ? 1.0 / 16 : 1.0 / 40);
     property <angle> spin: Theme.motion ? mod(animation-tick() / 1s * speed, 1.0) * 360deg : 0deg;
     width: size * 1.3; height: size * 1.3;
+    // 0 -> 1 once when the connection comes up: a ring runs out and the shape pops
+    property <float> pulse: state == 2 ? 1 : 0;
+    animate pulse { duration: state == 2 && Theme.motion ? 900ms : 0ms; easing: cubic-bezier(0.20, 0.00, 0.00, 1.00); }
     Rectangle {
         width: root.size * 1.22; height: self.width; border-radius: self.width / 2;
         background: Theme.primary.with-alpha(root.state == 2 ? 0.12 : 0);
-        animate background { duration: 600ms; }
+        animate background { duration: Ds.t-slow; }
+    }
+    Rectangle {
+        width: root.size * (1 + 0.3 * root.pulse); height: self.width; border-radius: self.width / 2;
+        border-width: 3px; border-color: Theme.primary.with-alpha(0.6 * (1 - root.pulse) * (root.state == 2 ? 1 : 0));
     }
     Rectangle {
         width: root.size; height: root.size;
         transform-rotation: root.spin;
-        transform-scale: ta.pressed ? 0.92 : (ta.has-hover ? 1.04 : 1.0);
-        animate transform-scale { duration: 220ms; easing: ease-out-back; }
+        transform-scale: (ta.pressed ? 0.9 : (ta.has-hover ? 1.04 : 1.0)) + 0.08 * sin(root.pulse * 180deg);
+        animate transform-scale { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
         Shape {
             width: 100%; height: 100%;
             shape: root.state == 2 ? Shapes.cookie9 : (root.state == 1 ? Shapes.soft-burst : Shapes.cookie12);
             fill: root.state == 2 ? Theme.primary : (root.state == 1 ? Theme.tertiary-container : (root.state == 3 ? Theme.error-container : Theme.surface-container-highest));
-            animate fill { duration: 400ms; }
+            animate fill { duration: Ds.t-slow; }
         }
     }
     Icon {
         glyph: "\u{e8ac}";
         font-size: root.size * 0.3;
         color: root.state == 2 ? Theme.on-primary : (root.state == 1 ? Theme.on-tertiary-container : (root.state == 3 ? Theme.on-error-container : Theme.on-surface-variant));
-        animate color { duration: 400ms; }
+        animate color { duration: Ds.t-slow; }
     }
     ta := TouchArea { mouse-cursor: pointer; clicked => { Logic.toggle-connect(); } }
 }
@@ -101,8 +108,8 @@ component SpeedW inherits Rectangle {
         Head { glyph: "\u{e9e4}"; title: @tr("Speed"); }
         HorizontalLayout {
             spacing: Ds.s4;
-            HorizontalLayout { spacing: 4px; Icon { glyph: "\u{f090}"; font-size: 18px; color: Theme.primary; width: 18px; } Big { text: Ui.down-speed; font-size: 20px; } }
-            HorizontalLayout { spacing: 4px; Icon { glyph: "\u{f09b}"; font-size: 18px; color: Theme.tertiary; width: 18px; } Big { text: Ui.up-speed; font-size: 20px; } }
+            HorizontalLayout { spacing: Ds.s1; Icon { glyph: "\u{f090}"; font-size: 18px; color: Theme.primary; width: 18px; } Big { text: Ui.down-speed; font-size: 20px; } }
+            HorizontalLayout { spacing: Ds.s1; Icon { glyph: "\u{f09b}"; font-size: 18px; color: Theme.tertiary; width: 18px; } Big { text: Ui.up-speed; font-size: 20px; } }
         }
         if Ui.status != 2: Text { vertical-stretch: 1; text: @tr("Connect to see the live speed"); font-size: 13px; color: Theme.on-surface-variant; horizontal-alignment: center; vertical-alignment: center; wrap: word-wrap; }
         if Ui.status == 2: Rectangle {
@@ -116,7 +123,7 @@ component SpeedW inherits Rectangle {
 component PingW inherits Rectangle {
     VerticalLayout {
         padding: Ds.card; spacing: Ds.s2;
-        Head { glyph: "\u{e1d8}"; title: @tr("Ping"); IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; tooltip: @tr("Measure now"); clicked => { Logic.ping-current(); } } }
+        Head { glyph: "\u{e1d8}"; title: @tr("Ping"); IconButton { width: Ds.mini-icon; height: Ds.mini-icon; glyph: "\u{e5d5}"; tooltip: @tr("Measure now"); clicked => { Logic.ping-current(); } } }
         Big { text: Ui.ping-now; font-size: 22px; }
         if Ui.ping-stats != "": Text { text: Ui.ping-stats; font-size: 11px; color: Theme.on-surface-variant; overflow: elide; }
         if Ui.ping-values.length >= 2: Spark { vertical-stretch: 1; values: Ui.ping-values; tint: Theme.secondary; }
@@ -127,10 +134,10 @@ component PingW inherits Rectangle {
 component IpW inherits Rectangle {
     VerticalLayout {
         padding: Ds.card; spacing: Ds.s2;
-        Head { glyph: "\u{e80b}"; title: @tr("Your IP"); IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; tooltip: @tr("Refresh"); enabled: !Ui.ip-loading; clicked => { Logic.refresh-ip(); } } }
+        Head { glyph: "\u{e80b}"; title: @tr("Your IP"); IconButton { width: Ds.mini-icon; height: Ds.mini-icon; glyph: "\u{e5d5}"; tooltip: @tr("Refresh"); enabled: !Ui.ip-loading; clicked => { Logic.refresh-ip(); } } }
         Big { text: Ui.ip-loading ? "…" : (Ui.ip == "" ? "—" : Ui.ip); font-size: 18px; }
         HorizontalLayout {
-            spacing: 6px;
+            spacing: Ds.s2;
             if Ui.ip-has-flag: Image { source: Ui.ip-flag; width: 18px; height: 18px; }
             Text { text: Ui.ip-place; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; vertical-alignment: center; }
         }
@@ -152,14 +159,17 @@ component QuotaW inherits Rectangle {
 component ServersW inherits Rectangle {
     VerticalLayout {
         padding: Ds.card; spacing: Ds.s2;
-        Head { glyph: "\u{e8ee}"; title: @tr("Servers"); IconButton { width: 32px; height: 32px; glyph: "\u{e9e4}"; tooltip: @tr("Test all"); enabled: !Ui.pinging; clicked => { Logic.ping-all(); } } }
+        Head { glyph: "\u{e8ee}"; title: @tr("Servers"); IconButton { width: Ds.mini-icon; height: Ds.mini-icon; glyph: "\u{e9e4}"; tooltip: @tr("Test all"); enabled: !Ui.pinging; clicked => { Logic.ping-all(); } } }
         Flickable {
             vertical-stretch: 1;
             content-height: list.preferred-height;
             list := VerticalLayout {
+                spacing: Ds.list-gap / 2;
                 for n in Ui.top-nodes: Rectangle {
-                    height: 48px; border-radius: Ds.r-s;
-                    background: n.selected ? Theme.secondary-container : (ta.has-hover ? Theme.surface-container-highest : transparent);
+                    height: 48px; border-radius: n.selected || ta.pressed ? Ds.r-m : Ds.r-s;
+                    background: n.selected ? Theme.secondary-container : (ta.pressed ? Theme.surface-container-highest : (ta.has-hover ? Theme.surface-container-high : transparent));
+                    animate background { duration: Ds.t-fast; }
+                    animate border-radius { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
                     ta := TouchArea { mouse-cursor: pointer; clicked => { Logic.select-node(n.id); } }
                     HorizontalLayout {
                         padding-left: Ds.s2; padding-right: Ds.s2; spacing: Ds.s3;
@@ -191,19 +201,20 @@ component SitesW inherits Rectangle {
         padding: Ds.card; spacing: Ds.s2;
         Head {
             glyph: "\u{e8be}"; title: @tr("Sites");
-            IconButton { width: 32px; height: 32px; glyph: "\u{e3c9}"; tooltip: @tr("Edit the list"); clicked => { Nav.c = Ui.sites-text; Nav.dialog = "sites"; } }
-            IconButton { width: 32px; height: 32px; glyph: "\u{e5d5}"; tooltip: @tr("Check now"); enabled: !Ui.sites-checking; clicked => { Logic.check-sites(); } }
+            IconButton { width: Ds.mini-icon; height: Ds.mini-icon; glyph: "\u{e3c9}"; tooltip: @tr("Edit the list"); clicked => { Nav.c = Ui.sites-text; Nav.dialog = "sites"; } }
+            IconButton { width: Ds.mini-icon; height: Ds.mini-icon; glyph: "\u{e5d5}"; tooltip: @tr("Check now"); enabled: !Ui.sites-checking; clicked => { Logic.check-sites(); } }
         }
         Flickable {
             vertical-stretch: 1;
             content-height: sl.preferred-height;
             sl := VerticalLayout {
                 for s in Ui.sites: HorizontalLayout {
-                    height: 28px; spacing: 8px;
-                    Rectangle {
-                        width: 10px; height: 10px; y: 9px; border-radius: 5px;
+                    height: 28px; spacing: Ds.s2;
+                    VerticalLayout { alignment: center; Rectangle {
+                        width: 10px; height: 10px; border-radius: self.width / 2;
                         background: !s.checked ? Theme.outline-variant : (s.ms < 0 || s.code >= 400 ? Theme.error : Theme.good);
-                    }
+                        animate background { duration: Ds.t-med; }
+                    } }
                     Text { text: s.site; font-size: 13px; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
                     Text { text: !s.checked ? "" : (s.ms < 0 ? @tr("unavailable") : s.ms + " ms"); font-size: 12px; color: Theme.on-surface-variant; vertical-alignment: center; }
                 }
@@ -223,7 +234,7 @@ component SpeedTestW inherits Rectangle {
             VerticalLayout { Text { text: @tr("Ping"); font-size: 11px; color: Theme.on-surface-variant; } Big { text: Ui.speed-ping; font-size: 18px; } }
         }
         if Ui.speed-running: VerticalLayout {
-            spacing: 6px;
+            spacing: Ds.s2;
             Text { text: Ui.speed-now; font-size: 12px; color: Theme.on-surface-variant; overflow: elide; }
             Progress { value: Ui.speed-phase >= 2 ? Ui.speed-fraction : -1; }
         }
@@ -235,7 +246,7 @@ component SpeedTestW inherits Rectangle {
 
 /** Speedometer: the running test, the live download, or the last result. Click to run a speed test. */
 component GaugeW inherits Rectangle {
-    TouchArea { mouse-cursor: pointer; clicked => { if !Ui.speed-running { Logic.run-speed-test(); } } }
+    TouchArea { mouse-cursor: Ui.speed-running ? default : pointer; clicked => { if !Ui.speed-running && !Nav.edit-layout { Logic.run-speed-test(); } } }
     VerticalLayout {
         padding: Ds.card; spacing: Ds.s1;
         Head { glyph: "\u{e9e4}"; title: @tr("Speedometer"); }
@@ -273,8 +284,9 @@ component UsageW inherits Rectangle {
                 x: i * bars.bw + 2px; width: bars.bw - 4px;
                 height: max(3px, (bars.height - 16px) * b.value);
                 y: bars.height - 16px - self.height;
-                border-radius: 4px;
+                border-radius: min(Ds.s1, self.width / 2);
                 background: Theme.primary.with-alpha(0.35 + 0.65 * b.value);
+                animate height, y { duration: Ds.t-med; easing: cubic-bezier(0.20, 0.00, 0.00, 1.00); }
                 Text { y: parent.height + 2px; text: b.label; font-size: 9px; color: Theme.on-surface-variant; }
             }
         }
@@ -282,32 +294,61 @@ component UsageW inherits Rectangle {
     }
 }
 
+/**
+ * One dashboard widget. In edit mode it can be dragged (body) and resized (corner): it follows the pointer exactly,
+ * a tinted cell shows where it will land, and on release it springs into that cell while the others make room.
+ */
 component Tile inherits Rectangle {
     in property <WidgetItem> w;
     in property <length> cell;     // column width
-    in property <length> row-h;      // row-h height
+    in property <length> row-h;    // row height
     in property <length> gap;
+    property <length> step-x: cell + gap;
+    property <length> step-y: row-h + gap;
     property <length> dx;
     property <length> dy;
     property <length> dw;
     property <length> dh;
     property <bool> moving;
-    x: w.x * (cell + gap) + dx;
-    y: w.y * (row-h + gap) + dy;
-    width: max(cell, w.w * cell + (w.w - 1) * gap + dw);
-    height: max(row-h, w.h * row-h + (w.h - 1) * gap + dh);
-    z: moving ? 10 : 0;
+    property <bool> sizing;
+    property <bool> busy: moving || sizing;
+    x: w.x * step-x + dx;
+    y: w.y * step-y + dy;
+    width: max(w.min-w * cell + (w.min-w - 1) * gap, w.w * cell + (w.w - 1) * gap + dw);
+    height: max(w.min-h * row-h + (w.min-h - 1) * gap, w.h * row-h + (w.h - 1) * gap + dh);
+    // while dragging the tile sticks to the pointer; after release (or when another tile pushes it) it springs
+    animate x, y, width, height { duration: busy || !Theme.motion ? 0ms : Ds.t-slow; easing: cubic-bezier(0.38, 1.21, 0.22, 1.00); }
+    z: busy ? 10 : 0;
+    // where it will land
+    property <int> snap-w: clamp(round((self.width + gap) / step-x), w.min-w, 12 - w.x);
+    property <int> snap-h: max(w.min-h, round((self.height + gap) / step-y));
+    property <int> snap-col: clamp(round(self.x / step-x), 0, 12 - w.w);
+    property <int> snap-row: max(0, round(self.y / step-y));
+
     property <float> shown: 0;
     init => { root.shown = 1; }
-    animate shown { duration: Theme.motion ? 360ms + (root.w.y * 2 + root.w.x) * 12ms : 0ms; easing: cubic-bezier(0.05, 0.7, 0.1, 1.0); }
+    animate shown { duration: Theme.motion ? Ds.t-slow + (root.w.y * 2 + root.w.x) * 12ms : 0ms; easing: cubic-bezier(0.05, 0.70, 0.10, 1.00); }
     opacity: root.shown;
-    transform-scale: 0.94 + 0.06 * root.shown;
+    transform-scale: (0.94 + 0.06 * root.shown) * (busy ? 1.02 : (Nav.edit-layout ? 0.98 : 1));
+    animate transform-scale { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
+
+    // drop target, drawn under the card and kept still while the tile moves
+    if root.busy: Rectangle {
+        x: (root.moving ? root.snap-col * root.step-x : root.w.x * root.step-x) - root.x;
+        y: (root.moving ? root.snap-row * root.step-y : root.w.y * root.step-y) - root.y;
+        width: (root.moving ? root.w.w : root.snap-w) * root.step-x - root.gap;
+        height: (root.moving ? root.w.h : root.snap-h) * root.step-y - root.gap;
+        border-radius: Ds.r-l;
+        background: Theme.primary.with-alpha(0.12);
+        border-width: 2px; border-color: Theme.primary.with-alpha(0.6);
+    }
     card := Rectangle {
         border-radius: Ds.r-l;
         background: Theme.surface-container;
         border-width: Nav.edit-layout ? 2px : 0;
-        border-color: root.moving ? Theme.primary : Theme.outline-variant;
-        drop-shadow-blur: root.moving ? 20px : 0;
+        border-color: root.busy ? Theme.primary : Theme.outline-variant;
+        animate border-color { duration: Ds.t-fast; }
+        drop-shadow-blur: root.busy ? 24px : 0;
         drop-shadow-color: #00000050;
         clip: true;
         if root.w.kind == "CONNECT": ConnectW { }
@@ -324,37 +365,46 @@ component Tile inherits Rectangle {
         if root.w.kind == "USAGE": UsageW { }
         if root.w.kind == "SPEEDOMETER": GaugeW { }
     }
-    if Nav.edit-layout: Rectangle {
+    if Nav.edit-layout: Appear {
+        lift: 0; length: Ds.t-med;
         border-radius: Ds.r-l;
-        background: Theme.surface.with-alpha(0.35);
+        background: Theme.surface.with-alpha(root.busy ? 0.15 : 0.35);
         TouchArea {
             mouse-cursor: move;
-            moved => { root.dx = self.mouse-x - self.pressed-x; root.dy = self.mouse-y - self.pressed-y; }
+            // the area moves with the tile, so each move adds only what is left of the way to the pointer
+            moved => { if root.moving { root.dx += self.mouse-x - self.pressed-x; root.dy += self.mouse-y - self.pressed-y; } }
             pointer-event(e) => {
-                if e.kind == PointerEventKind.down { root.moving = true; }
-                if e.kind == PointerEventKind.up {
+                if e.kind == PointerEventKind.down && e.button == PointerEventButton.left { root.moving = true; }
+                if e.kind == PointerEventKind.up && root.moving {
                     root.moving = false;
-                    Logic.widget-move(root.w.id, round((root.x) / (root.cell + root.gap)), round((root.y) / (root.row-h + root.gap)));
+                    Logic.widget-move(root.w.id, root.snap-col, root.snap-row);
                     root.dx = 0; root.dy = 0;
                 }
             }
         }
         Rectangle {
-            x: Ds.s3; y: Ds.s3; width: 32px; height: 32px; border-radius: self.width / 2; background: Theme.error-container;
-            Icon { glyph: "\u{e5cd}"; font-size: 18px; color: Theme.on-error-container; }
-            TouchArea { mouse-cursor: pointer; clicked => { Logic.widget-remove(root.w.id); } }
+            x: Ds.s3; y: Ds.s3; width: Ds.mini-icon; height: Ds.mini-icon; border-radius: self.width / 2;
+            background: rm.has-hover ? Theme.error : Theme.error-container;
+            animate background { duration: Ds.t-fast; }
+            transform-scale: rm.pressed ? 0.85 : 1;
+            animate transform-scale { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
+            Icon { glyph: "\u{e5cd}"; font-size: 18px; color: rm.has-hover ? Theme.surface : Theme.on-error-container; }
+            rm := TouchArea { mouse-cursor: pointer; clicked => { Logic.widget-remove(root.w.id); } }
         }
         Rectangle {
-            x: parent.width - self.width - Ds.s3; y: parent.height - self.height - Ds.s3; width: 32px; height: 32px; border-radius: self.width / 2; background: Theme.primary;
+            x: parent.width - self.width - Ds.s3; y: parent.height - self.height - Ds.s3; width: Ds.mini-icon; height: Ds.mini-icon;
+            border-radius: self.width / 2; background: Theme.primary;
+            transform-scale: rs.pressed ? 1.15 : (rs.has-hover ? 1.08 : 1);
+            animate transform-scale { duration: Ds.t-med; easing: cubic-bezier(0.42, 1.67, 0.21, 0.90); }
             Icon { glyph: "\u{e5d0}"; font-size: 16px; color: Theme.on-primary; transform-rotation: 45deg; }
-            TouchArea {
+            rs := TouchArea {
                 mouse-cursor: nwse-resize;
-                moved => { root.dw = self.mouse-x - self.pressed-x; root.dh = self.mouse-y - self.pressed-y; }
+                moved => { if root.sizing { root.dw += self.mouse-x - self.pressed-x; root.dh += self.mouse-y - self.pressed-y; } }
                 pointer-event(e) => {
-                    if e.kind == PointerEventKind.down { root.moving = true; }
-                    if e.kind == PointerEventKind.up {
-                        root.moving = false;
-                        Logic.widget-resize(root.w.id, max(2, round((root.width + root.gap) / (root.cell + root.gap))), max(2, round((root.height + root.gap) / (root.row-h + root.gap))));
+                    if e.kind == PointerEventKind.down && e.button == PointerEventButton.left { root.sizing = true; }
+                    if e.kind == PointerEventKind.up && root.sizing {
+                        root.sizing = false;
+                        Logic.widget-resize(root.w.id, root.snap-w, root.snap-h);
                         root.dw = 0; root.dh = 0;
                     }
                 }
@@ -368,6 +418,7 @@ export component HomePage inherits Rectangle {
     property <length> pad: Ds.page;
     property <length> cell: (self.width - 2 * pad - 11 * gap) / 12;
     property <length> row-h: 64px;
+    property <int> added; // bumped when a widget is added: the grid scrolls to it
     property <[{k: string, t: string, g: string}]> kinds: [
         { k: "CONNECT", t: @tr("Connect"), g: "\u{e8ac}" }, { k: "SERVER", t: @tr("Server"), g: "\u{e875}" },
         { k: "MODES", t: @tr("Modes"), g: "\u{f184}" }, { k: "SPEED", t: @tr("Speed"), g: "\u{e9e4}" },
@@ -424,9 +475,12 @@ export component HomePage inherits Rectangle {
             if Nav.edit-layout: Button { kind: 1; glyph: "\u{e145}"; text: @tr("Widget"); clicked => { add-menu.show(); } }
             Button { kind: Nav.edit-layout ? 0 : 2; glyph: Nav.edit-layout ? "\u{e5ca}" : "\u{e3c9}"; text: Nav.edit-layout ? @tr("Done") : @tr("Edit"); clicked => { Nav.edit-layout = !Nav.edit-layout; } }
         }
-        Flickable {
+        flick := Flickable {
             vertical-stretch: 1;
-            content-height: grid.height + 24px;
+            interactive: !Nav.edit-layout; // dragging a tile must move the tile, not the page
+            property <int> watch: root.added;
+            changed watch => { self.viewport-y = min(0px, self.height - self.content-height); }
+            content-height: grid.height + Ds.page;
             grid := Rectangle {
                 x: root.pad; y: 0;
                 width: root.width - 2 * root.pad;
@@ -437,17 +491,17 @@ export component HomePage inherits Rectangle {
     }
     add-menu := PopupWindow {
         x: root.width - 260px; y: 72px; width: 220px;
-        Rectangle {
-            border-radius: Ds.r-m; background: Theme.surface-container-highest; drop-shadow-blur: 16px; drop-shadow-color: #00000050;
+        Surface {
             VerticalLayout {
                 padding: Ds.s1;
-                for k in root.kinds: Rectangle {
-                    height: 40px; border-radius: Ds.r-s;
-                    background: ka.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
-                    HorizontalLayout { padding-left: 12px; spacing: 12px;
-                        Icon { glyph: k.g; font-size: 18px; width: 20px; color: Theme.primary; }
-                        Text { text: k.t; font-size: 14px; color: Theme.on-surface; vertical-alignment: center; } }
-                    ka := TouchArea { clicked => { Logic.widget-add(k.k); } }
+                for k in root.kinds: MenuItem {
+                    glyph: k.g; text: k.t; glyph-color: Theme.primary;
+                    clicked => {
+                        add-menu.close();
+                        Logic.widget-add(k.k);
+                        // show the new widget: it lands at the bottom
+                        root.added += 1;
+                    }
                 }
             }
         }
